@@ -12,13 +12,13 @@ const client = new Client({
     ]
 });
 
-// DOĞRUDAN RESİM BAĞLANTINIZ
+// DISCORD CDN LOGO BAĞLANTISI (Kibar Boyut İçin Sağ Üste Alındı)
 const BAKANLIK_LOGO = 'https://cdn.discordapp.com/attachments/1517632919966060664/1522580425086730391/aaaa.webp?ex=6a48fd05&is=6a47ab85&hm=05a3bdabf1b8cc47174becbc39e562344f861e4a119788a35c15ac45bd6a3102&';
 
 // MESAİ LOG KANALININ ID'Sİ
 const LOG_KANAL_ID = '1522573956693889215'; 
 
-// KALICI VERİ TABANI AYARI (Render kapansa da silinmez)
+// KALICI VERİ TABANI AYARI
 const DATA_FILE = path.join(__dirname, 'toplamSureler.json');
 let toplamSureler = new Map();
 
@@ -38,6 +38,11 @@ function veriKaydet() {
 }
 
 const aktifMesailer = new Map();
+
+// TÜRLÜ TÜRKİYE SAATİ FORMATLAYICI FONKSİYON
+function formatTRTarih(date) {
+    return date.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', hour12: false }).replace(',', ' -');
+}
 
 // TÜM / KOMUTLARININ TANIMLARI
 const commands = [
@@ -71,7 +76,6 @@ client.once('ready', async () => {
             Routes.applicationCommands(client.user.id),
             { body: commands },
         );
-        console.log('Eğik çizgi (/) komutları başarıyla yüklendi!');
     } catch (error) {
         console.error(error);
     }
@@ -83,7 +87,7 @@ client.on('interactionCreate', async (interaction) => {
 
     const { commandName } = interaction;
 
-    // 1. /mesai-panel KOMUTU (FOTOĞRAF EN ÜSTTE HİLESİ YAPILDI)
+    // 1. /mesai-panel KOMUTU
     if (commandName === 'mesai-panel') {
         if (!interaction.member.permissions.has('Administrator')) {
             return interaction.reply({ content: 'Bu komutu kullanmak için Yönetici yetkisine sahip olmalısınız.', ephemeral: true });
@@ -91,10 +95,10 @@ client.on('interactionCreate', async (interaction) => {
 
         const embed = new EmbedBuilder()
             .setTitle('🏛️ T.C. ADALET BAKANLIĞI MESAİ SİSTEMİ')
-            .setImage(BAKANLIK_LOGO) // Büyük fotoğraf en üstte dursun diye yazıyı alt bilgiye itiyoruz
-            .setDescription('### 📋 PERSONEL MESAİ TALİMATI\nMesaiye başlarken veya mesaiyi bitirirken aşağıdaki butonları kullanmanız gerekmektedir.\n\n*Not: Süreleriniz sistem tarafından kalıcı olarak saniye saniye kayıt altına alınmaktadır.*')
+            .setDescription('📋 **PERSONEL MESAİ TALİMATI**\n\nMesaiye başlarken veya mesaiyi bitirirken aşağıdaki butonları kullanmanız gerekmektedir.\n\n⚠️ *Süreleriniz sistem tarafından saniye saniye kayıt altına alınarak veri tabanına işlenmektedir.*')
             .setColor('#1a1a1a')
-            .setFooter({ text: 'T.C. Adalet Bakanlığı Bilgi İşlem Daire Başkanlığı', iconURL: BAKANLIK_LOGO });
+            .setThumbnail(BAKANLIK_LOGO) // İdeal Küçültülmüş Boyut
+            .setFooter({ text: 'T.C. Adalet Bakanlığı Bilgi İşlem Daire Başkanlığı' });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -107,7 +111,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setStyle(ButtonStyle.Danger)
         );
 
-        await interaction.reply({ content: 'Büyük panel başarıyla oluşturuluyor...', ephemeral: true });
+        await interaction.reply({ content: 'Panel başarıyla oluşturuluyor...', ephemeral: true });
         await interaction.channel.send({ embeds: [embed], components: [row] });
     }
 
@@ -120,10 +124,10 @@ client.on('interactionCreate', async (interaction) => {
         const dakika = Math.floor((toplamSaniye % 3600) / 60);
 
         const sorguEmbed = new EmbedBuilder()
-            .setTitle('📊 DETAYLI PERSONEL MESAİ RAPORU')
-            .setImage(BAKANLIK_LOGO)
-            .setDescription(`## Personel Bilgisi: ${hedef}\n\n⏱️ **Toplam Çalışma Süresi:** \`${saat} Saat, ${dakika} Dakika\`\n📂 **Kurum Birimi:** Adalet Bakanlığı Personeli`)
+            .setTitle('📊 PERSONEL MESAİ RAPORU')
+            .setDescription(`👤 **Personel Bilgisi:** ${hedef}\n\n⏱️ **Toplam Çalışma Süresi:** \`${saat} Saat, ${dakika} Dakika\`\n📂 **Kurum Birimi:** Adalet Bakanlığı Personeli`)
             .setColor('#3498db')
+            .setThumbnail(BAKANLIK_LOGO)
             .setTimestamp();
 
         return interaction.reply({ embeds: [sorguEmbed] });
@@ -139,21 +143,21 @@ client.on('interactionCreate', async (interaction) => {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 10);
 
-        let aciklama = "## 🏆 En Çok Mesai Yapan İlk 10 Personel\n\n";
+        let aciklama = "🏆 **En Çok Mesai Yapan İlk 10 Personel**\n\n";
         let sira = 1;
 
         for (const [userId, toplamSaniye] of siraliListe) {
             const saat = Math.floor(toplamSaniye / 3600);
             const dakika = Math.floor((toplamSaniye % 3600) / 60);
-            aciklama += `### ${sira}. <@${userId}> ➔ \`${saat} Saat ${dakika} Dakika\`\n`;
+            aciklama += `**${sira}.** <@${userId}> ➔ \`${saat} Saat ${dakika} Dakika\`\n`;
             sira++;
         }
 
         const topEmbed = new EmbedBuilder()
             .setTitle('🏛️ ADALET BAKANLIĞI PERFORMANS SIRALAMASI')
-            .setImage(BAKANLIK_LOGO)
             .setDescription(aciklama)
             .setColor('#f1c40f')
+            .setThumbnail(BAKANLIK_LOGO)
             .setTimestamp();
 
         return interaction.reply({ embeds: [topEmbed] });
@@ -172,15 +176,20 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: '❌ Zaten aktif bir mesainiz bulunuyor!', ephemeral: true });
         }
 
-        aktifMesailer.set(userId, Date.now());
+        const simdi = Date.now();
+        aktifMesailer.set(userId, simdi);
         await interaction.reply({ content: '▶️ Mesainiz başarıyla başlatıldı. İyi çalışmalar!', ephemeral: true });
 
         if (logKanali) {
+            const mevcutToplamSaniye = toplamSureler.get(userId) || 0;
+            const mSaat = Math.floor(mevcutToplamSaniye / 3600);
+            const mDakika = Math.floor((mevcutToplamSaniye % 3600) / 60);
+
             const logEmbed = new EmbedBuilder()
                 .setTitle('📥 MESAİ GİRİŞİ YAPILDI')
-                .setImage(BAKANLIK_LOGO)
-                .setDescription(`## 👤 Personel:\n${interaction.user}\n\n### 🛫 Durum:\nAktif olarak göreve ve mesaiye başlanmıştır.`)
+                .setDescription(`👤 **Personel:** ${interaction.user}\n\n📅 **Giriş Saati:** \`${formatTRTarih(new Date(simdi))}\`\n🗃️ **Mevcut Toplam Mesai:** \`${mSaat} Saat, ${mDakika} Dakika\``)
                 .setColor('#2ecc71')
+                .setThumbnail(BAKANLIK_LOGO)
                 .setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
@@ -198,7 +207,7 @@ client.on('interactionCreate', async (interaction) => {
         const yeniToplam = eskiSure + gecenSureSaniye;
         
         toplamSureler.set(userId, yeniToplam);
-        veriKaydet(); // Dosyaya kalıcı olarak yazar
+        veriKaydet(); 
         
         aktifMesailer.delete(userId);
 
@@ -212,10 +221,10 @@ client.on('interactionCreate', async (interaction) => {
             const tDakika = Math.floor((yeniToplam % 3600) / 60);
 
             const logEmbed = new EmbedBuilder()
-                .setTitle('📤 MESAİ ÇIŞI YAPILDI')
-                .setImage(BAKANLIK_LOGO)
-                .setDescription(`## 👤 Personel:\n${interaction.user} mesaiyi başarıyla bitirdi.\n\n⏱️ **Bu Oturumdaki Süre:** \`${dakika} Dakika, ${saniye} Saniye\`\n🗃️ **Kalıcı Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
+                .setTitle('📤 MESAİ ÇIKIŞI YAPILDI')
+                .setDescription(`👤 **Personel:** ${interaction.user}\n\n⏱️ **Bu Oturumdaki Süre:** \`${dakika} Dakika, ${saniye} Saniye\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
                 .setColor('#e74c3c')
+                .setThumbnail(BAKANLIK_LOGO)
                 .setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }

@@ -10,8 +10,8 @@ const client = new Client({
     ]
 });
 
-// LOGO BAĞLANTISI
-const BAKANLIK_LOGO = 'https://upload.wikimedia.org/wikipedia/commons/4/4e/T.C._Adalet_Bakanl%C4%B1%C4%9F%C4%B1_Logo.png';
+// DOĞRUDAN RESİM BAĞLANTISI (GARANTİ REHBER)
+const BAKANLIK_LOGO = 'https://i.imgur.com/G4VzV1W.png';
 
 // BURAYA MESAİ LOG KANALININ ID'SİNİ YAZIN
 const LOG_KANAL_ID = '1522573956693889215'; 
@@ -127,7 +127,7 @@ client.on('interactionCreate', async (interaction) => {
 
         for (const [userId, toplamSaniye] of siraliListe) {
             const saat = Math.floor(toplamSaniye / 3600);
-            const dakika = Math.floor((toplamSaniye % 3600) / 60);
+            const dakika = Math.floor((toparamSaniye % 3600) / 60);
             aciklama += `**${sira}.** <@${userId}> ➔ \`${saat}s ${dakika}dk\`\n`;
             sira++;
         }
@@ -171,7 +171,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'mesai_bitir') {
         if (!aktifMesailer.has(userId)) {
-            return interaction.reply({ content: '❌ Aktif bir mesainiz bulunmuyor! Önce mesaiyi başlatmalısınız.', ephemeral: true });
+            return interaction.reply({ content: '❌ Aktif bir mesainiz bulunuyor! Önce mesaiyi başlatmalısınız.', ephemeral: true });
         }
 
         const girisZamani = aktifMesailer.get(userId);

@@ -11,7 +11,7 @@ const client = new Client({
 });
 
 // BURAYA MESAİ LOG KANALININ ID'SİNİ YAZIN
-const LOG_KANAL_ID = '1522573956693889215'; 
+const LOG_KANAL_ID = '122573956693889215'; 
 
 // Verileri hafızada tutuyoruz
 const aktifMesailer = new Map();
@@ -171,4 +171,27 @@ client.on('interactionCreate', async (interaction) => {
         const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
 
         const eskiSure = toplamSureler.get(userId) || 0;
-        toplamSureler.set(userId, eskiSure + gecenSureSaniye
+        toplamSureler.set(userId, eskiSure + gecenSureSaniye);
+        aktifMesailer.delete(userId);
+
+        const dakika = Math.floor(gecenSureSaniye / 60);
+        const saniye = gecenSureSaniye % 60;
+
+        await interaction.reply({ content: `⏹️ Mesainiz bitirildi. Bu oturumdaki süreniz: **${dakika} dakika, ${saniye} saniye.**`, ephemeral: true });
+
+        if (logKanali) {
+            const toplamSaniye = toplamSureler.get(userId);
+            const tSaat = Math.floor(toplamSaniye / 3600);
+            const tDakika = Math.floor((toplamSaniye % 3600) / 60);
+
+            const logEmbed = new EmbedBuilder()
+                .setTitle('📤 Mesai Çıkışı')
+                .setDescription(`${interaction.user} mesaiyi bitirdi.\n\n**Bu oturum:** ${dakika} dk, ${saniye} sn\n**Toplam Çalışma Süresi:** ${tSaat} saat, ${tDakika} dk`)
+                .setColor('#e74c3c')
+                .setTimestamp();
+            logKanali.send({ embeds: [logEmbed] });
+        }
+    }
+});
+
+client.login(process.env.TOKEN);

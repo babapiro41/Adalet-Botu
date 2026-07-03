@@ -11,7 +11,7 @@ const client = new Client({
 });
 
 // BURAYA MESAİ LOG KANALININ ID'SİNİ YAZIN
-const LOG_KANAL_ID = '122573956693889215'; 
+const LOG_KANAL_ID = '1522573956693889215'; 
 
 // Verileri hafızada tutuyoruz
 const aktifMesailer = new Map();

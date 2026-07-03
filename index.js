@@ -10,6 +10,9 @@ const client = new Client({
     ]
 });
 
+// LOGO BAĞLANTISI
+const BAKANLIK_LOGO = 'https://upload.wikimedia.org/wikipedia/commons/4/4e/T.C._Adalet_Bakanl%C4%B1%C4%9F%C4%B1_Logo.png';
+
 // BURAYA MESAİ LOG KANALININ ID'SİNİ YAZIN
 const LOG_KANAL_ID = '1522573956693889215'; 
 
@@ -73,7 +76,8 @@ client.on('interactionCreate', async (interaction) => {
             .setTitle('🏛️ ADALET BAKANLIĞI MESAİ SİSTEMİ')
             .setDescription('Mesaiye başlarken veya mesaiyi bitirirken aşağıdaki butonları kullanınız.\n\n*Not: Süreleriniz saniye saniye kayıt altına alınmaktadır.*')
             .setColor('#1a1a1a')
-            .setFooter({ text: 'Adalet Bakanlığı Bilgi İşlem' });
+            .setThumbnail(BAKANLIK_LOGO)
+            .setFooter({ text: 'Adalet Bakanlığı Bilgi İşlem', iconURL: BAKANLIK_LOGO });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -102,6 +106,7 @@ client.on('interactionCreate', async (interaction) => {
             .setTitle('📊 Personel Mesai Raporu')
             .setDescription(`${hedef} adlı personelin toplam mesai süresi:\n\n**⏱️ ${saat} Saat, ${dakika} Dakika**`)
             .setColor('#3498db')
+            .setThumbnail(BAKANLIK_LOGO)
             .setTimestamp();
 
         return interaction.reply({ embeds: [sorguEmbed] });
@@ -131,6 +136,7 @@ client.on('interactionCreate', async (interaction) => {
             .setTitle('🏆 En Çok Mesai Yapan Personeller (Top 10)')
             .setDescription(aciklama)
             .setColor('#f1c40f')
+            .setThumbnail(BAKANLIK_LOGO)
             .setTimestamp();
 
         return interaction.reply({ embeds: [topEmbed] });
@@ -157,6 +163,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('📥 Mesai Girişi')
                 .setDescription(`${interaction.user} mesaiye başladı.`)
                 .setColor('#2ecc71')
+                .setThumbnail(BAKANLIK_LOGO)
                 .setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
@@ -188,6 +195,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('📤 Mesai Çıkışı')
                 .setDescription(`${interaction.user} mesaiyi bitirdi.\n\n**Bu oturum:** ${dakika} dk, ${saniye} sn\n**Toplam Çalışma Süresi:** ${tSaat} saat, ${tDakika} dk`)
                 .setColor('#e74c3c')
+                .setThumbnail(BAKANLIK_LOGO)
                 .setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }

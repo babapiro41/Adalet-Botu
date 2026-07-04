@@ -75,9 +75,17 @@ const commands = [
         description: 'En çok mesai yapan ilk 10 personeli listeler.',
     },
     {
+        name: 'aktif-mesai',
+        description: 'Şu anda aktif olarak mesaide olan tüm personelleri listeler.',
+    },
+    {
         name: 'mesai-kapat',
         description: 'Aktif mesaisi olan bir personelin mesaisini zorla kapatır. (Mesai Sorumlusu)',
         options: [{ name: 'kullanici', description: 'Mesaisi kapatılacak personel', type: ApplicationCommandOptionType.User, required: true }]
+    },
+    {
+        name: 'toplu-mesai-kapat',
+        description: 'Şu anda aktif mesaide olan HERKESİN mesaisini toplu olarak kapatır. (Mesai Sorumlusu)',
     },
     {
         name: 'mesai-ayarla',
@@ -170,6 +178,32 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ embeds: [topEmbed] });
     }
 
+    // YENİ: /aktif-mesai KOMUTU
+    if (commandName === 'aktif-mesai') {
+        if (aktifMesailer.size === 0) {
+            return interaction.reply({ content: 'ℹ️ Şu anda aktif mesaide olan herhangi bir personel bulunmamaktadır.', ephemeral: false });
+        }
+
+        let listeMetni = "🟢 **Şu Anda Görevde Olan Personel Listesi:**\n\n";
+        aktifMesailer.forEach((girisZamani, userId) => {
+            const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
+            const saat = Math.floor(gecenSureSaniye / 3600);
+            const dakika = Math.floor((gecenSureSaniye % 3600) / 60);
+            
+            listeMetni += `• <@${userId}> ➔ \`${saat} sa, ${dakika} dk gündür görevde\` (Giriş: \`${formatTRTarih(new Date(girisZamani))}\`)\n`;
+        });
+
+        const aktifEmbed = new EmbedBuilder()
+            .setTitle('🏛️ AKTİF MESAİDEKİ PERSONELLER')
+            .setDescription(listeMetni)
+            .setThumbnail(BAKANLIK_LOGO)
+            .setColor('#2ecc71')
+            .setFooter({ text: `Toplam ${aktifMesailer.size} personel görevde.` })
+            .setTimestamp();
+
+        return interaction.reply({ embeds: [aktifEmbed] });
+    }
+
     if (commandName === 'mesai-kapat') {
         if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
         const hedef = interaction.options.getUser('kullanici');
@@ -192,11 +226,46 @@ client.on('interactionCreate', async (interaction) => {
             const tDakika = Math.floor((yeniToplam % 3600) / 60);
             const logEmbed = new EmbedBuilder()
                 .setTitle('🚨 MESAİ YETKİLİ TARAFINDAN ZORLA KAPATILDI')
-                .setDescription(`👤 **Mesaisi Kapatılan:** ${hedef}\n🛡️ **Kapatan Yetkili:** ${interaction.user}\n\n⏱️ **Oturumda Kazanılan Süre:** \`${Math.floor(gecenSureSaniye / 60)} Dakika, ${gecenSureSaniye % 60} Saniye\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
+                .setDescription(`👤 **Mesaisi Kapatılan:** ${hedef}\n🛡️ **Kapatan Yetkili:** ${interaction.user}\n\n⏱️ **Oturumda Kazanılan Süre:** \`${Math.floor(gecenSureSaniye / 3600)} Saat, ${Math.floor((gecenSureSaniye % 3600) / 60)} Dakika\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
                 .setImage(BAKANLIK_LOGO)
                 .setColor('#d35400')
                 .setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
+        }
+    }
+
+    // YENİ: /toplu-mesai-kapat KOMUTU
+    if (commandName === 'toplu-mesai-kapat') {
+        if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
+        if (aktifMesailer.size === 0) return interaction.reply({ content: '❌ Şu anda aktif mesaide kimse bulunmadığı için toplu kapatma yapılamaz.', ephemeral: true });
+
+        const kapatilanlar = [];
+        const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
+        
+        await interaction.deferReply({ ephemeral: true });
+
+        aktifMesailer.forEach((girisZamani, userId) => {
+            const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
+            const eskiSure = toplamSureler.get(userId) || 0;
+            const yeniToplam = eskiSure + gecenSureSaniye;
+
+            toplamSureler.set(userId, yeniToplam);
+            kapatilanlar.push(`<@${userId}> (\`${Math.floor(gecenSureSaniye / 60)} dk\`)`);
+        });
+
+        aktifMesailer.clear(); 
+        await veriKaydet(interaction.guild);
+
+        await interaction.editReply({ content: `✅ Aktif mesaideki toplam **${kapatilanlar.length}** personelin mesaisi başarıyla toplu olarak sonlandırıldı.` });
+
+        if (logKanali) {
+            const topluEmbed = new EmbedBuilder()
+                .setTitle('🚨 HERKESİN MESAİSİ TOPLU OLARAK KAPATILDI')
+                .setDescription(`🛡️ **İşlemi Yapan Yetkili:** ${interaction.user}\n\n👥 **Mesaisi Sonlandırılan Personeller:**\n${kapatilanlar.join('\n')}`)
+                .setImage(BAKANLIK_LOGO)
+                .setColor('#c0392b')
+                .setTimestamp();
+            logKanali.send({ embeds: [topluEmbed] });
         }
     }
 
@@ -276,7 +345,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const dakika = Math.floor(gecenSureSaniye / 60);
         const saniye = gecenSureSaniye % 60;
-        await interaction.reply({ content: `⏹️ Mesainiz bitirildi. Süreniz: **${text = dakika} dakika, ${saniye} saniye.**`, ephemeral: true });
+        await interaction.reply({ content: `⏹️ Mesainiz bitirildi. Süreniz: **${dakika} dakika, ${saniye} saniye.**`, ephemeral: true });
 
         if (logKanali) {
             const tSaat = Math.floor(yeniToplam / 3600);

@@ -16,7 +16,10 @@ const BAKANLIK_LOGO = 'https://cdn.discordapp.com/attachments/151763291996606066
 const LOG_KANAL_ID = '1522573956693889215'; 
 const MESAİ_SORUMLUSU_ROL_ADI = 'Mesai Sorumlusu'; 
 
+// VERİ YAPILARI (Profil istatistikleri için genişletildi)
 let toplamSureler = new Map();
+let mesaiGirisSayilari = new Map();
+let sonGirisTarihleri = new Map();
 const aktifMesailer = new Map();
 
 // VERİLERİ DISCORD LOG KANALINA YEDEKLER
@@ -24,8 +27,13 @@ async function veriKaydet(guild) {
     const logKanali = guild.channels.cache.get(LOG_KANAL_ID);
     if (!logKanali) return;
 
-    const obj = Object.fromEntries(toplamSureler);
-    const sifredat = Buffer.from(JSON.stringify(obj)).toString('base64');
+    const dataObj = {
+        sureler: Object.fromEntries(toplamSureler),
+        girisler: Object.fromEntries(mesaiGirisSayilari),
+        tarihler: Object.fromEntries(sonGirisTarihleri)
+    };
+    
+    const sifredat = Buffer.from(JSON.stringify(dataObj)).toString('base64');
     await logKanali.send({ content: `DATA_BACKUP:${sifredat}` });
 }
 
@@ -42,8 +50,12 @@ async function veriYukle(guild) {
             const base64Data = yedekMesaji.content.replace('DATA_BACKUP:', '');
             const rawData = Buffer.from(base64Data, 'base64').toString('utf-8');
             const parsed = JSON.parse(rawData);
-            toplamSureler = new Map(Object.entries(parsed));
-            console.log("Mesai süreleri Discord yedeğinden başarıyla geri yüklendi!");
+            
+            if (parsed.sureler) toplamSureler = new Map(Object.entries(parsed.sureler));
+            if (parsed.girisler) mesaiGirisSayilari = new Map(Object.entries(parsed.girisler));
+            if (parsed.tarihler) sonGirisTarihleri = new Map(Object.entries(parsed.tarihler));
+            
+            console.log("Mesai verileri ve profil istatistikleri başarıyla geri yüklendi!");
         } else {
             console.log("Eski bir mesai yedeği bulunamadı, sıfırdan başlanıyor.");
         }
@@ -67,8 +79,8 @@ const commands = [
     },
     {
         name: 'mesai-sorgu',
-        description: 'Bir personelin veya kendinizin toplam mesai süresini gösterir.',
-        options: [{ name: 'kullanici', description: 'Sorgulanacak personeli seçin.', type: ApplicationCommandOptionType.User, required: false }]
+        description: 'Bir personelin detaylı mesai profilini gösterir. (Mesai Sorumlusu)',
+        options: [{ name: 'kullanici', description: 'Sorgulanacak personeli seçin.', type: ApplicationCommandOptionType.User, required: true }]
     },
     {
         name: 'mesai-top',
@@ -143,18 +155,43 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.channel.send({ embeds: [embed], components: [row] });
     }
 
+    // GÜNCELLENDİ: GELİŞMİŞ /mesai-sorgu (Sadece Mesai Sorumluları Görebilir)
     if (commandName === 'mesai-sorgu') {
-        const hedef = interaction.options.getMember('kullanici') || interaction.member;
+        if (!yetkiKontrol(interaction)) {
+            return interaction.reply({ content: `❌ Bu komutu kullanmak ve personellerin detaylı profillerini görmek için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
+        }
+
+        const hedef = interaction.options.getMember('kullanici');
         const toplamSaniye = toplamSureler.get(hedef.id) || 0;
+        const toplamGiris = mesaiGirisSayilari.get(hedef.id) || 0;
+        const sonGiris = sonGirisTarihleri.get(hedef.id) || "Kayıt Yok";
+
         const saat = Math.floor(toplamSaniye / 3600);
         const dakika = Math.floor((toplamSaniye % 3600) / 60);
 
+        // Ortalama Süre Hesaplama
+        let ortalamaMetin = "`0 dk`";
+        if (toplamGiris > 0 && toplamSaniye > 0) {
+            const ortalamaSaniye = Math.floor(toplamSaniye / toplamGiris);
+            const ortSaatt = Math.floor(ortalamaSaniye / 3600);
+            const ortDk = Math.floor((ortalamaSaniye % 3600) / 60);
+            ortalamaMetin = `\`${ortSaatt > 0 ? ortSaatt + ' sa ' : ''}${ortDk} dk\``;
+        }
+
         const sorguEmbed = new EmbedBuilder()
-            .setTitle('📊 PERSONEL MESAİ RAPORU')
-            .setDescription(`👤 **Personel Bilgisi:** ${hedef}\n\n⏱️ **Toplam Çalışma Süresi:** \`${saat} Saat, ${dakika} Dakika\`\n📂 **Kurum Birimi:** Adalet Bakanlığı Personeli`)
+            .setTitle('📂 PERSONEL DETAYLI MESAİ PROFİLİ')
+            .setDescription(`👤 **Personel:** ${hedef}\n📂 **Kurum Birimi:** Adalet Bakanlığı`)
+            .addFields(
+                { name: '⏱️ Toplam Çalışma Süresi', value: `\`${saat} Saat, ${dakika} Dakika\``, inline: true },
+                { name: '📥 Toplam Mesai Seansı', value: `\`${toplamGiris} Kez Göreve Çıktı\``, inline: true },
+                { name: '📊 Seans Başı Ortalama Süre', value: ortalamaMetin, inline: true },
+                { name: '📅 En Son Görev Başlangıcı', value: `\`${sonGiris}\``, inline: false }
+            )
             .setThumbnail(BAKANLIK_LOGO)
             .setColor('#3498db')
+            .setFooter({ text: `Sorgulayan Yetkili: ${interaction.user.username}` })
             .setTimestamp();
+            
         return interaction.reply({ embeds: [sorguEmbed] });
     }
 
@@ -178,7 +215,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ embeds: [topEmbed] });
     }
 
-    // YENİ: /aktif-mesai KOMUTU
     if (commandName === 'aktif-mesai') {
         if (aktifMesailer.size === 0) {
             return interaction.reply({ content: 'ℹ️ Şu anda aktif mesaide olan herhangi bir personel bulunmamaktadır.', ephemeral: false });
@@ -234,7 +270,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // YENİ: /toplu-mesai-kapat KOMUTU
     if (commandName === 'toplu-mesai-kapat') {
         if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
         if (aktifMesailer.size === 0) return interaction.reply({ content: '❌ Şu anda aktif mesaide kimse bulunmadığı için toplu kapatma yapılamaz.', ephemeral: true });
@@ -318,6 +353,14 @@ client.on('interactionCreate', async (interaction) => {
         if (aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Zaten aktif bir mesainiz bulunuyor!', ephemeral: true });
         const simdi = Date.now();
         aktifMesailer.set(userId, simdi);
+
+        // Profil istatistiklerini güncelle
+        const eskiGiris = mesaiGirisSayilari.get(userId) || 0;
+        mesaiGirisSayilari.set(userId, eskiGiris + 1);
+        
+        const trTarihMetni = formatTRTarih(new Date(simdi));
+        sonGirisTarihleri.set(userId, trTarihMetni);
+
         await interaction.reply({ content: '▶️ Mesainiz başarıyla başlatıldı. İyi çalışmalar!', ephemeral: true });
 
         if (logKanali) {
@@ -326,7 +369,7 @@ client.on('interactionCreate', async (interaction) => {
             const mDakika = Math.floor((mevcutToplamSaniye % 3600) / 60);
             const logEmbed = new EmbedBuilder()
                 .setTitle('📥 MESAİ GİRİŞİ YAPILDI')
-                .setDescription(`👤 **Personel:** ${interaction.user}\n\n📅 **Giriş Saati:** \`${formatTRTarih(new Date(simdi))}\`\n🗃️ **Mevcut Toplam Mesai:** \`${mSaat} Saat, ${mDakika} Dakika\``)
+                .setDescription(`👤 **Personel:** ${interaction.user}\n\n📅 **Giriş Saati:** \`${trTarihMetni}\`\n🗃️ **Mevcut Toplam Mesai:** \`${mSaat} Saat, ${mDakika} Dakika\``)
                 .setImage(BAKANLIK_LOGO).setColor('#2ecc71').setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
@@ -351,7 +394,7 @@ client.on('interactionCreate', async (interaction) => {
             const tSaat = Math.floor(yeniToplam / 3600);
             const tDakika = Math.floor((yeniToplam % 3600) / 60);
             const logEmbed = new EmbedBuilder()
-                .setTitle('📤 MESAİ ÇIŞI YAPILDI')
+                .setTitle('📤 MESAİ ÇIKIŞI YAPILDI')
                 .setDescription(`👤 **Personel:** ${interaction.user}\n\n⏱️ **Bu Oturumdaki Süre:** \`${dakika} Dakika, ${saniye} Saniye\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
                 .setImage(BAKANLIK_LOGO).setColor('#e74c3c').setTimestamp();
             logKanali.send({ embeds: [logEmbed] });

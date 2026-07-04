@@ -16,10 +16,11 @@ const BAKANLIK_LOGO = 'https://cdn.discordapp.com/attachments/151763291996606066
 const LOG_KANAL_ID = '1522573956693889215'; 
 const MESAİ_SORUMLUSU_ROL_ADI = 'Mesai Sorumlusu'; 
 
-// VERİ YAPILARI (Profil istatistikleri için genişletildi)
+// VERİ YAPILARI
 let toplamSureler = new Map();
 let mesaiGirisSayilari = new Map();
 let sonGirisTarihleri = new Map();
+let mesaiBaslangicTarihleri = new Map(); 
 const aktifMesailer = new Map();
 
 // VERİLERİ DISCORD LOG KANALINA YEDEKLER
@@ -30,7 +31,8 @@ async function veriKaydet(guild) {
     const dataObj = {
         sureler: Object.fromEntries(toplamSureler),
         girisler: Object.fromEntries(mesaiGirisSayilari),
-        tarihler: Object.fromEntries(sonGirisTarihleri)
+        tarihler: Object.fromEntries(sonGirisTarihleri),
+        baslangiclar: Object.fromEntries(mesaiBaslangicTarihleri)
     };
     
     const sifredat = Buffer.from(JSON.stringify(dataObj)).toString('base64');
@@ -54,8 +56,9 @@ async function veriYukle(guild) {
             if (parsed.sureler) toplamSureler = new Map(Object.entries(parsed.sureler));
             if (parsed.girisler) mesaiGirisSayilari = new Map(Object.entries(parsed.girisler));
             if (parsed.tarihler) sonGirisTarihleri = new Map(Object.entries(parsed.tarihler));
+            if (parsed.baslangiclar) mesaiBaslangicTarihleri = new Map(Object.entries(parsed.baslangiclar));
             
-            console.log("Mesai verileri ve profil istatistikleri başarıyla geri yüklendi!");
+            console.log("Mesai verileri ve liderlik tablosu başarıyla geri yüklendi!");
         } else {
             console.log("Eski bir mesai yedeği bulunamadı, sıfırdan başlanıyor.");
         }
@@ -72,6 +75,15 @@ function yetkiKontrol(interaction) {
     return interaction.member.permissions.has('Administrator') || interaction.member.roles.cache.some(role => role.name === MESAİ_SORUMLUSU_ROL_ADI);
 }
 
+// Günlük ortalama saniyeyi hesaplayan yardımcı fonksiyon
+function hesaplaGunlukOrtalamaSaniye(userId, toplamSaniye) {
+    const ilkKayitMs = mesaiBaslangicTarihleri.get(userId);
+    if (!ilkKayitMs || toplamSaniye <= 0) return 0;
+    const gecenSureMs = Date.now() - Number(ilkKayitMs);
+    const gecenGunSayisi = Math.max(1, Math.ceil(gecenSureMs / (1000 * 60 * 60 * 24)));
+    return Math.floor(toplamSaniye / gecenGunSayisi);
+}
+
 const commands = [
     {
         name: 'mesai-panel',
@@ -84,7 +96,7 @@ const commands = [
     },
     {
         name: 'mesai-top',
-        description: 'En çok mesai yapan ilk 10 personeli listeler.',
+        description: 'En çok mesai yapan ilk 10 personeli listeler (Günlük ortalama bilgisiyle).',
     },
     {
         name: 'aktif-mesai',
@@ -155,7 +167,6 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.channel.send({ embeds: [embed], components: [row] });
     }
 
-    // GÜNCELLENDİ: GELİŞMİŞ /mesai-sorgu (Sadece Mesai Sorumluları Görebilir)
     if (commandName === 'mesai-sorgu') {
         if (!yetkiKontrol(interaction)) {
             return interaction.reply({ content: `❌ Bu komutu kullanmak ve personellerin detaylı profillerini görmek için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
@@ -169,14 +180,10 @@ client.on('interactionCreate', async (interaction) => {
         const saat = Math.floor(toplamSaniye / 3600);
         const dakika = Math.floor((toplamSaniye % 3600) / 60);
 
-        // Ortalama Süre Hesaplama
-        let ortalamaMetin = "`0 dk`";
-        if (toplamGiris > 0 && toplamSaniye > 0) {
-            const ortalamaSaniye = Math.floor(toplamSaniye / toplamGiris);
-            const ortSaatt = Math.floor(ortalamaSaniye / 3600);
-            const ortDk = Math.floor((ortalamaSaniye % 3600) / 60);
-            ortalamaMetin = `\`${ortSaatt > 0 ? ortSaatt + ' sa ' : ''}${ortDk} dk\``;
-        }
+        const gridSaniye = hesaplaGunlukOrtalamaSaniye(hedef.id, toplamSaniye);
+        const ortSaat = Math.floor(gridSaniye / 3600);
+        const ortDk = Math.floor((gridSaniye % 3600) / 60);
+        const günlükOrtalamaMetin = `\`${ortSaat > 0 ? ortSaat + ' sa ' : ''}${ortDk} dk / gün\``;
 
         const sorguEmbed = new EmbedBuilder()
             .setTitle('📂 PERSONEL DETAYLI MESAİ PROFİLİ')
@@ -184,7 +191,7 @@ client.on('interactionCreate', async (interaction) => {
             .addFields(
                 { name: '⏱️ Toplam Çalışma Süresi', value: `\`${saat} Saat, ${dakika} Dakika\``, inline: true },
                 { name: '📥 Toplam Mesai Seansı', value: `\`${toplamGiris} Kez Göreve Çıktı\``, inline: true },
-                { name: '📊 Seans Başı Ortalama Süre', value: ortalamaMetin, inline: true },
+                { name: '📊 Günlük Ortalama Süre', value: günlükOrtalamaMetin, inline: true },
                 { name: '📅 En Son Görev Başlangıcı', value: `\`${sonGiris}\``, inline: false }
             )
             .setThumbnail(BAKANLIK_LOGO)
@@ -195,23 +202,46 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ embeds: [sorguEmbed] });
     }
 
+    // GÜNCELLENDİ: TOPLAM SAATE GÖRE SIRALAYAN AMA YANDA ORTALAMAYI DA GÖSTEREN /mesai-top
     if (commandName === 'mesai-top') {
         if (toplamSureler.size === 0) return interaction.reply({ content: 'Henüz kaydedilmiş bir mesai süresi bulunmuyor.', ephemeral: true });
-        const siraliListe = [...toplamSureler.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+        
+        const siralamaListesi = [];
+        toplamSureler.forEach((toplamSaniye, userId) => {
+            const gunlukOrtalamaSaniye = hesaplaGunlukOrtalamaSaniye(userId, toplamSaniye);
+            siralamaListesi.push({ userId, toplamSaniye, gunlukOrtalamaSaniye });
+        });
+
+        // KURAL: En yüksek toplam mesai süresine (toplamSaniye) göre büyükten küçüğe sırala!
+        siralamaListesi.sort((a, b) => b.toplamSaniye - a.toplamSaniye);
+        const ilkOn = siralamaListesi.slice(0, 10);
+
         let aciklama = "🏆 **En Çok Mesai Yapan İlk 10 Personel**\n\n";
         let sira = 1;
-        for (const [userId, toplamSaniye] of siraliListe) {
-            const saat = Math.floor(toplamSaniye / 3600);
-            const dakika = Math.floor((toplamSaniye % 3600) / 60);
-            aciklama += `**${sira}.** <@${userId}> ➔ \`${saat} Saat ${dakika} Dakika\`\n`;
+
+        for (const data of ilkOn) {
+            // Toplam Süre Hesaplama
+            const tSaat = Math.floor(data.toplamSaniye / 3600);
+            const tDakika = Math.floor((data.toplamSaniye % 3600) / 60);
+            const toplamMetin = `\`${tSaat} Saat ${tDakika} Dakika\``;
+
+            // Günlük Ortalama Hesaplama
+            const oSaat = Math.floor(data.gunlukOrtalamaSaniye / 3600);
+            const oDakika = Math.floor((data.gunlukOrtalamaSaniye % 3600) / 60);
+            const ortalamaMetin = `\`Ort: ${oSaat > 0 ? oSaat + 'sa ' : ''}${oDakika}dk/gün\``;
+
+            aciklama += `**${sira}.** <@${data.userId}> ➔ ${toplamMetin} | ${ortalamaMetin}\n`;
             sira++;
         }
+
         const topEmbed = new EmbedBuilder()
             .setTitle('🏛️ ADALET BAKANLIĞI PERFORMANS SIRALAMASI')
             .setDescription(aciklama)
             .setThumbnail(BAKANLIK_LOGO)
             .setColor('#f1c40f')
+            .setFooter({ text: 'Sıralama toplam çalışma sürelerine göre yapılmaktadır.' })
             .setTimestamp();
+
         return interaction.reply({ embeds: [topEmbed] });
     }
 
@@ -222,184 +252,4 @@ client.on('interactionCreate', async (interaction) => {
 
         let listeMetni = "🟢 **Şu Anda Görevde Olan Personel Listesi:**\n\n";
         aktifMesailer.forEach((girisZamani, userId) => {
-            const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
-            const saat = Math.floor(gecenSureSaniye / 3600);
-            const dakika = Math.floor((gecenSureSaniye % 3600) / 60);
-            
-            listeMetni += `• <@${userId}> ➔ \`${saat} sa, ${dakika} dk gündür görevde\` (Giriş: \`${formatTRTarih(new Date(girisZamani))}\`)\n`;
-        });
-
-        const aktifEmbed = new EmbedBuilder()
-            .setTitle('🏛️ AKTİF MESAİDEKİ PERSONELLER')
-            .setDescription(listeMetni)
-            .setThumbnail(BAKANLIK_LOGO)
-            .setColor('#2ecc71')
-            .setFooter({ text: `Toplam ${aktifMesailer.size} personel görevde.` })
-            .setTimestamp();
-
-        return interaction.reply({ embeds: [aktifEmbed] });
-    }
-
-    if (commandName === 'mesai-kapat') {
-        if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
-        const hedef = interaction.options.getUser('kullanici');
-        if (!aktifMesailer.has(hedef.id)) return interaction.reply({ content: '❌ Belirtilen personelin şu anda aktif bir mesaisi bulunmuyor.', ephemeral: true });
-
-        const girisZamani = aktifMesailer.get(hedef.id);
-        const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
-        const eskiSure = toplamSureler.get(hedef.id) || 0;
-        const yeniToplam = eskiSure + gecenSureSaniye;
-
-        toplamSureler.set(hedef.id, yeniToplam);
-        await veriKaydet(interaction.guild);
-        aktifMesailer.delete(hedef.id);
-
-        const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
-        interaction.reply({ content: `✅ ${hedef} isimli personelin aktif mesaisi sonlandırıldı.`, ephemeral: true });
-
-        if (logKanali) {
-            const tSaat = Math.floor(yeniToplam / 3600);
-            const tDakika = Math.floor((yeniToplam % 3600) / 60);
-            const logEmbed = new EmbedBuilder()
-                .setTitle('🚨 MESAİ YETKİLİ TARAFINDAN ZORLA KAPATILDI')
-                .setDescription(`👤 **Mesaisi Kapatılan:** ${hedef}\n🛡️ **Kapatan Yetkili:** ${interaction.user}\n\n⏱️ **Oturumda Kazanılan Süre:** \`${Math.floor(gecenSureSaniye / 3600)} Saat, ${Math.floor((gecenSureSaniye % 3600) / 60)} Dakika\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO)
-                .setColor('#d35400')
-                .setTimestamp();
-            logKanali.send({ embeds: [logEmbed] });
-        }
-    }
-
-    if (commandName === 'toplu-mesai-kapat') {
-        if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
-        if (aktifMesailer.size === 0) return interaction.reply({ content: '❌ Şu anda aktif mesaide kimse bulunmadığı için toplu kapatma yapılamaz.', ephemeral: true });
-
-        const kapatilanlar = [];
-        const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
-        
-        await interaction.deferReply({ ephemeral: true });
-
-        aktifMesailer.forEach((girisZamani, userId) => {
-            const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
-            const eskiSure = toplamSureler.get(userId) || 0;
-            const yeniToplam = eskiSure + gecenSureSaniye;
-
-            toplamSureler.set(userId, yeniToplam);
-            kapatilanlar.push(`<@${userId}> (\`${Math.floor(gecenSureSaniye / 60)} dk\`)`);
-        });
-
-        aktifMesailer.clear(); 
-        await veriKaydet(interaction.guild);
-
-        await interaction.editReply({ content: `✅ Aktif mesaideki toplam **${kapatilanlar.length}** personelin mesaisi başarıyla toplu olarak sonlandırıldı.` });
-
-        if (logKanali) {
-            const topluEmbed = new EmbedBuilder()
-                .setTitle('🚨 HERKESİN MESAİSİ TOPLU OLARAK KAPATILDI')
-                .setDescription(`🛡️ **İşlemi Yapan Yetkili:** ${interaction.user}\n\n👥 **Mesaisi Sonlandırılan Personeller:**\n${kapatilanlar.join('\n')}`)
-                .setImage(BAKANLIK_LOGO)
-                .setColor('#c0392b')
-                .setTimestamp();
-            logKanali.send({ embeds: [topluEmbed] });
-        }
-    }
-
-    if (commandName === 'mesai-ayarla') {
-        if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
-        const hedef = interaction.options.getUser('kullanici');
-        const islem = interaction.options.getString('islem');
-        const saat = interaction.options.getInteger('saat');
-        const dakika = interaction.options.getInteger('dakika');
-
-        const degisimSaniyesi = (saat * 3600) + (dakika * 60);
-        const mevcutSure = toplamSureler.get(hedef.id) || 0;
-        let yeniToplam = mevcutSure;
-        let logBaslik = ""; let logRenk = ""; let logAciklama = "";
-
-        if (islem === 'ekle') {
-            yeniToplam = mevcutSure + degisimSaniyesi;
-            logBaslik = '➕ MANUEL MESAİ SÜRESİ EKLENDİ'; logRenk = '#27ae60';
-            logAciklama = `➕ **Eklenen Süre:** \`${saat} Saat, ${dakika} Dakika\``;
-            interaction.reply({ content: `✅ Süre başarıyla eklendi.`, ephemeral: true });
-        } else if (islem === 'sil') {
-            yeniToplam = mevcutSure - degisimSaniyesi; if (yeniToplam < 0) yeniToplam = 0;
-            logBaslik = '➖ MANUEL MESAİ SÜRESİ SİLİNDİ'; logRenk = '#c0392b';
-            logAciklama = `➖ **Silinen Süre:** \`${saat} Saat, ${dakika} Dakika\``;
-            interaction.reply({ content: `✅ Süre başarıyla silindi.`, ephemeral: true });
-        }
-
-        toplamSureler.set(hedef.id, yeniToplam);
-        await veriKaydet(interaction.guild);
-
-        const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
-        if (logKanali) {
-            const tSaat = Math.floor(yeniToplam / 3600);
-            const tDakika = Math.floor((yeniToplam % 3600) / 60);
-            const logEmbed = new EmbedBuilder()
-                .setTitle(logBaslik)
-                .setDescription(`👤 **İşlem Yapılan Personel:** ${hedef}\n🛡️ **İşlemi Yapan Yetkili:** ${interaction.user}\n\n${logAciklama}\n🗃️ **Yeni Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO).setColor(logRenk).setTimestamp();
-            logKanali.send({ embeds: [logEmbed] });
-        }
-    }
-});
-
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
-    const userId = interaction.user.id;
-
-    if (interaction.customId === 'mesai_baslat') {
-        if (aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Zaten aktif bir mesainiz bulunuyor!', ephemeral: true });
-        const simdi = Date.now();
-        aktifMesailer.set(userId, simdi);
-
-        // Profil istatistiklerini güncelle
-        const eskiGiris = mesaiGirisSayilari.get(userId) || 0;
-        mesaiGirisSayilari.set(userId, eskiGiris + 1);
-        
-        const trTarihMetni = formatTRTarih(new Date(simdi));
-        sonGirisTarihleri.set(userId, trTarihMetni);
-
-        await interaction.reply({ content: '▶️ Mesainiz başarıyla başlatıldı. İyi çalışmalar!', ephemeral: true });
-
-        if (logKanali) {
-            const mevcutToplamSaniye = toplamSureler.get(userId) || 0;
-            const mSaat = Math.floor(mevcutToplamSaniye / 3600);
-            const mDakika = Math.floor((mevcutToplamSaniye % 3600) / 60);
-            const logEmbed = new EmbedBuilder()
-                .setTitle('📥 MESAİ GİRİŞİ YAPILDI')
-                .setDescription(`👤 **Personel:** ${interaction.user}\n\n📅 **Giriş Saati:** \`${trTarihMetni}\`\n🗃️ **Mevcut Toplam Mesai:** \`${mSaat} Saat, ${mDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO).setColor('#2ecc71').setTimestamp();
-            logKanali.send({ embeds: [logEmbed] });
-        }
-    }
-
-    if (interaction.customId === 'mesai_bitir') {
-        if (!aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Aktif bir mesainiz bulunmuyor!', ephemeral: true });
-        const girisZamani = aktifMesailer.get(userId);
-        const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
-        const eskiSure = toplamSureler.get(userId) || 0;
-        const yeniToplam = eskiSure + gecenSureSaniye;
-        
-        toplamSureler.set(userId, yeniToplam);
-        await veriKaydet(interaction.guild); 
-        aktifMesailer.delete(userId);
-
-        const dakika = Math.floor(gecenSureSaniye / 60);
-        const saniye = gecenSureSaniye % 60;
-        await interaction.reply({ content: `⏹️ Mesainiz bitirildi. Süreniz: **${dakika} dakika, ${saniye} saniye.**`, ephemeral: true });
-
-        if (logKanali) {
-            const tSaat = Math.floor(yeniToplam / 3600);
-            const tDakika = Math.floor((yeniToplam % 3600) / 60);
-            const logEmbed = new EmbedBuilder()
-                .setTitle('📤 MESAİ ÇIKIŞI YAPILDI')
-                .setDescription(`👤 **Personel:** ${interaction.user}\n\n⏱️ **Bu Oturumdaki Süre:** \`${dakika} Dakika, ${saniye} Saniye\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO).setColor('#e74c3c').setTimestamp();
-            logKanali.send({ embeds: [logEmbed] });
-        }
-    }
-});
-
-client.login(process.env.TOKEN);
+            const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000

@@ -1,5 +1,5 @@
 const http = require('http');
-http.createServer((req, res) => res.end('Bot Aktif!')).listen(process.env.PORT || 3000);
+http.createServer((req, res) => res.end('EGM Botu Aktif!')).listen(process.env.PORT || 3000);
 
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes, ApplicationCommandOptionType } = require('discord.js');
 
@@ -11,10 +11,10 @@ const client = new Client({
     ]
 });
 
-// CONFIG AYARLARI
-const BAKANLIK_LOGO = 'https://cdn.discordapp.com/attachments/1517632919966060664/1522580425086730391/aaaa.webp?ex=6a48fd05&is=6a47ab85&hm=05a3bdabf1b8cc47174becbc39e562344f861e4a119788a35c15ac45bd6a3102&';
-const LOG_KANAL_ID = '1522573956693889215'; 
-const MESAİ_SORUMLUSU_ROL_ADI = 'Mesai Sorumlusu'; 
+// CONFIG AYARLARI (EGM TEMASI)
+const EGM_LOGO = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/EGM_Logo.png/800px-EGM_Logo.png';
+const LOG_KANAL_ID = 'YENİ_GİRECEĞİN_LOG_KANAL_IDSI'; 
+const MESAİ_SORUMLUSU_ROL_ADI = 'EGM Sorumlusu'; // Sunucundaki yetkili rol adı
 
 // VERİ YAPILARI
 let toplamSureler = new Map();
@@ -39,7 +39,7 @@ async function veriKaydet(guild) {
     await logKanali.send({ content: `DATA_BACKUP:${sifredat}` });
 }
 
-// BOT AÇILDIĞINDA EN SON DISCORD YEDEĞİNİ GERİ YÜKLER
+// BOT AÇILDIĞINDA YEDEĞİ GERİ YÜKLER
 async function veriYukle(guild) {
     const logKanali = guild.channels.cache.get(LOG_KANAL_ID);
     if (!logKanali) return;
@@ -58,9 +58,7 @@ async function veriYukle(guild) {
             if (parsed.tarihler) sonGirisTarihleri = new Map(Object.entries(parsed.tarihler));
             if (parsed.baslangiclar) mesaiBaslangicTarihleri = new Map(Object.entries(parsed.baslangiclar));
             
-            console.log("Mesai verileri ve liderlik tablosu başarıyla geri yüklendi!");
-        } else {
-            console.log("Eski bir mesai yedeği bulunamadı, sıfırdan başlanıyor.");
+            console.log("EGM devriye verileri başarıyla yüklendi!");
         }
     } catch (e) {
         console.error("Yedek yükleme hatası:", e);
@@ -75,7 +73,6 @@ function yetkiKontrol(interaction) {
     return interaction.member.permissions.has('Administrator') || interaction.member.roles.cache.some(role => role.name === MESAİ_SORUMLUSU_ROL_ADI);
 }
 
-// Günlük ortalama saniyeyi hesaplayan yardımcı fonksiyon
 function hesaplaGunlukOrtalamaSaniye(userId, toplamSaniye) {
     const ilkKayitMs = mesaiBaslangicTarihleri.get(userId);
     if (!ilkKayitMs || toplamSaniye <= 0) return 0;
@@ -86,34 +83,34 @@ function hesaplaGunlukOrtalamaSaniye(userId, toplamSaniye) {
 
 const commands = [
     {
-        name: 'mesai-panel',
-        description: 'Adalet Bakanlığı mesai buton panelini oluşturur. (Yönetici)',
+        name: 'egm-panel',
+        description: 'Emniyet Genel Müdürlüğü devriye/mesai buton panelini oluşturur. (Yönetici)',
     },
     {
-        name: 'mesai-sorgu',
-        description: 'Bir personelin detaylı mesai profilini gösterir. (Mesai Sorumlusu)',
+        name: 'polis-sorgu',
+        description: 'Bir emniyet personelinin detaylı devriye/mesai profilini gösterir.',
         options: [{ name: 'kullanici', description: 'Sorgulanacak personeli seçin.', type: ApplicationCommandOptionType.User, required: true }]
     },
     {
-        name: 'mesai-top',
-        description: 'En çok mesai yapan ilk 10 personeli listeler (Günlük ortalama bilgisiyle).',
+        name: 'egm-top',
+        description: 'En çok mesai yapan ilk 10 emniyet personelini listeler.',
     },
     {
-        name: 'aktif-mesai',
-        description: 'Şu anda aktif olarak mesaide olan tüm personelleri listeler.',
+        name: 'aktif-devriye',
+        description: 'Şu anda aktif görevde/devriyede olan tüm personelleri listeler.',
     },
     {
         name: 'mesai-kapat',
-        description: 'Aktif mesaisi olan bir personelin mesaisini zorla kapatır. (Mesai Sorumlusu)',
+        description: 'Aktif görevde olan bir personelin mesaisini zorla kapatır. (EGM Yetkilisi)',
         options: [{ name: 'kullanici', description: 'Mesaisi kapatılacak personel', type: ApplicationCommandOptionType.User, required: true }]
     },
     {
         name: 'toplu-mesai-kapat',
-        description: 'Şu anda aktif mesaide olan HERKESİN mesaisini toplu olarak kapatır. (Mesai Sorumlusu)',
+        description: 'Aktif görevdeki HERKESİN mesaisini toplu olarak sonlandırır.',
     },
     {
         name: 'mesai-ayarla',
-        description: 'Personel mesai süresini ekleme veya silme şeklinde düzenler. (Mesai Sorumlusu)',
+        description: 'Emniyet personeli mesai süresini manuel düzenler.',
         options: [
             { name: 'kullanici', description: 'Süresi düzenlenecek personel', type: ApplicationCommandOptionType.User, required: true },
             {
@@ -133,7 +130,7 @@ const commands = [
 ];
 
 client.once('ready', async () => {
-    console.log(`${client.user.tag} aktif!`);
+    console.log(`${client.user.tag} (EGM Botu) aktif!`);
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try {
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
@@ -148,28 +145,28 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
     const { commandName } = interaction;
 
-    if (commandName === 'mesai-panel') {
+    if (commandName === 'egm-panel') {
         if (!interaction.member.permissions.has('Administrator')) {
             return interaction.reply({ content: 'Bu komutu kullanmak için Yönetici yetkisine sahip olmalısınız.', ephemeral: true });
         }
         const embed = new EmbedBuilder()
-            .setTitle('🏛️ T.C. ADALET BAKANLIĞI MESAİ SİSTEMİ')
-            .setDescription('📋 **PERSONEL MESAİ TALİMATI**\n\nMesaiye başlarken veya mesaiyi bitirirken aşağıdaki butonları kullanmanız gerekmektedir.\n\n⚠️ *Süreleriniz sistem tarafından saniye saniye kayıt altına alınarak veri tabanına işlenmektedir.*')
-            .setThumbnail(BAKANLIK_LOGO)
-            .setColor('#1a1a1a')
-            .setFooter({ text: 'T.C. Adalet Bakanlığı Bilgi İşlem Daire Başkanlığı' });
+            .setTitle('🚨 T.C. EMNİYET GENEL MÜDÜRLÜĞÜ MESAİ SİSTEMİ')
+            .setDescription('🚓 **EMNİYET PERSONELİ DEVRİYE VE MESAİ TALİMATI**\n\nGöreve başlarken veya devriyenizi sonlandırırken aşağıdaki butonları kullanmanız gerekmektedir.\n\n⚠️ *Mesai süreleriniz EGM Bilgi İşlem sistemi tarafından anlık olarak kayıt altına alınmaktadır.*')
+            .setThumbnail(EGM_LOGO)
+            .setColor('#002b66')
+            .setFooter({ text: 'T.C. Emniyet Genel Müdürlüğü Bilgi Teknolojileri ve Haberleşme Daire Başkanlığı' });
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('mesai_baslat').setLabel('▶️ Mesai Başlat').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('mesai_bitir').setLabel('⏹️ Mesai Bitir').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('mesai_baslat').setLabel('🔵 Göreve Başla (Mesai)').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('mesai_bitir').setLabel('🔴 Görevi Bitir (Mesai)').setStyle(ButtonStyle.Danger)
         );
-        await interaction.reply({ content: 'Panel başarıyla oluşturuluyor...', ephemeral: true });
+        await interaction.reply({ content: 'EGM Mesai paneli oluşturuluyor...', ephemeral: true });
         await interaction.channel.send({ embeds: [embed], components: [row] });
     }
 
-    if (commandName === 'mesai-sorgu') {
+    if (commandName === 'polis-sorgu') {
         if (!yetkiKontrol(interaction)) {
-            return interaction.reply({ content: `❌ Bu komutu kullanmak ve personellerin detaylı profillerini görmek için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
+            return interaction.reply({ content: `❌ Personel sorgusu yapmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
         }
 
         const hedef = interaction.options.getMember('kullanici');
@@ -186,24 +183,24 @@ client.on('interactionCreate', async (interaction) => {
         const günlükOrtalamaMetin = `\`${ortSaat > 0 ? ortSaat + ' sa ' : ''}${ortDk} dk / gün\``;
 
         const sorguEmbed = new EmbedBuilder()
-            .setTitle('📂 PERSONEL DETAYLI MESAİ PROFİLİ')
-            .setDescription(`👤 **Personel:** ${hedef}\n📂 **Kurum Birimi:** Adalet Bakanlığı`)
+            .setTitle('👮 EMNİYET PERSONELİ MESAİ PROFİLİ')
+            .setDescription(`👤 **Personel:** ${hedef}\n🛡️ **Birim:** Emniyet Genel Müdürlüğü`)
             .addFields(
-                { name: '⏱️ Toplam Çalışma Süresi', value: `\`${saat} Saat, ${dakika} Dakika\``, inline: true },
-                { name: '📥 Toplam Mesai Seansı', value: `\`${toplamGiris} Kez Göreve Çıktı\``, inline: true },
-                { name: '📊 Günlük Ortalama Süre', value: günlükOrtalamaMetin, inline: true },
-                { name: '📅 En Son Görev Başlangıcı', value: `\`${sonGiris}\``, inline: false }
+                { name: '⏱️ Toplam Görev Süresi', value: `\`${saat} Saat, ${dakika} Dakika\``, inline: true },
+                { name: '📥 Toplam Devriye Seansı', value: `\`${toplamGiris} Kez Göreve Çıktı\``, inline: true },
+                { name: '📊 Günlük Ortalama Devriye', value: günlükOrtalamaMetin, inline: true },
+                { name: '📅 Son Görev Başlangıcı', value: `\`${sonGiris}\``, inline: false }
             )
-            .setThumbnail(BAKANLIK_LOGO)
-            .setColor('#3498db')
-            .setFooter({ text: `Sorgulayan Yetkili: ${interaction.user.username}` })
+            .setThumbnail(EGM_LOGO)
+            .setColor('#1f4e78')
+            .setFooter({ text: `Sorgulayan EGM Yetkilisi: ${interaction.user.username}` })
             .setTimestamp();
             
         return interaction.reply({ embeds: [sorguEmbed] });
     }
 
-    if (commandName === 'mesai-top') {
-        if (toplamSureler.size === 0) return interaction.reply({ content: 'Henüz kaydedilmiş bir mesai süresi bulunmuyor.', ephemeral: true });
+    if (commandName === 'egm-top') {
+        if (toplamSureler.size === 0) return interaction.reply({ content: 'Henüz kaydedilmiş bir görev süresi bulunmuyor.', ephemeral: true });
         
         const siralamaListesi = [];
         toplamSureler.forEach((toplamSaniye, userId) => {
@@ -214,7 +211,7 @@ client.on('interactionCreate', async (interaction) => {
         siralamaListesi.sort((a, b) => b.toplamSaniye - a.toplamSaniye);
         const ilkOn = siralamaListesi.slice(0, 10);
 
-        let aciklama = "🏆 **En Çok Mesai Yapan İlk 10 Personel**\n\n";
+        let aciklama = "🏆 **En Çok Görev Yapan İlk 10 Emniyet Personeli**\n\n";
         let sira = 1;
 
         for (const data of ilkOn) {
@@ -231,22 +228,22 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const topEmbed = new EmbedBuilder()
-            .setTitle('🏛️ ADALET BAKANLIĞI PERFORMANS SIRALAMASI')
+            .setTitle('🚨 EMNİYET GENEL MÜDÜRLÜĞÜ PERFORMANS SIRALAMASI')
             .setDescription(aciklama)
-            .setThumbnail(BAKANLIK_LOGO)
-            .setColor('#f1c40f')
-            .setFooter({ text: 'Sıralama toplam çalışma sürelerine göre yapılmaktadır.' })
+            .setThumbnail(EGM_LOGO)
+            .setColor('#002b66')
+            .setFooter({ text: 'Sıralama toplam devriye ve görev sürelerine göre yapılmaktadır.' })
             .setTimestamp();
 
         return interaction.reply({ embeds: [topEmbed] });
     }
 
-    if (commandName === 'aktif-mesai') {
+    if (commandName === 'aktif-devriye') {
         if (aktifMesailer.size === 0) {
-            return interaction.reply({ content: 'ℹ️ Şu anda aktif mesaide olan herhangi bir personel bulunmamaktadır.', ephemeral: false });
+            return interaction.reply({ content: 'ℹ️ Şu anda devriyede veya görevde olan herhangi bir emniyet personeli bulunmamaktadır.', ephemeral: false });
         }
 
-        let listeMetni = "🟢 **Şu Anda Görevde Olan Personel Listesi:**\n\n";
+        let listeMetni = "🔵 **Şu Anda Görevde Olan Polis Personelleri:**\n\n";
         aktifMesailer.forEach((girisZamani, userId) => {
             const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
             const saat = Math.floor(gecenSureSaniye / 3600);
@@ -256,11 +253,11 @@ client.on('interactionCreate', async (interaction) => {
         });
 
         const aktifEmbed = new EmbedBuilder()
-            .setTitle('🏛️ AKTİF MESAİDEKİ PERSONELLER')
+            .setTitle('🚓 AKTİF DEVRİYEDEKİ PERSONELLER')
             .setDescription(listeMetni)
-            .setThumbnail(BAKANLIK_LOGO)
-            .setColor('#2ecc71')
-            .setFooter({ text: `Toplam ${aktifMesailer.size} personel görevde.` })
+            .setThumbnail(EGM_LOGO)
+            .setColor('#2980b9')
+            .setFooter({ text: `Toplam ${aktifMesailer.size} personel sahada görev yapıyor.` })
             .setTimestamp();
 
         return interaction.reply({ embeds: [aktifEmbed] });
@@ -269,7 +266,7 @@ client.on('interactionCreate', async (interaction) => {
     if (commandName === 'mesai-kapat') {
         if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
         const hedef = interaction.options.getUser('kullanici');
-        if (!aktifMesailer.has(hedef.id)) return interaction.reply({ content: '❌ Belirtilen personelin şu anda aktif bir mesaisi bulunmuyor.', ephemeral: true });
+        if (!aktifMesailer.has(hedef.id)) return interaction.reply({ content: '❌ Belirtilen personelin şu anda aktif bir görevi bulunmuyor.', ephemeral: true });
 
         const girisZamani = aktifMesailer.get(hedef.id);
         const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
@@ -281,16 +278,16 @@ client.on('interactionCreate', async (interaction) => {
         aktifMesailer.delete(hedef.id);
 
         const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
-        interaction.reply({ content: `✅ ${hedef} isimli personelin aktif mesaisi sonlandırıldı.`, ephemeral: true });
+        interaction.reply({ content: `✅ ${hedef} isimli personelin aktif görevi sonlandırıldı.`, ephemeral: true });
 
         if (logKanali) {
             const tSaat = Math.floor(yeniToplam / 3600);
             const tDakika = Math.floor((yeniToplam % 3600) / 60);
             const logEmbed = new EmbedBuilder()
-                .setTitle('🚨 MESAİ YETKİLİ TARAFINDAN ZORLA KAPATILDI')
-                .setDescription(`👤 **Mesaisi Kapatılan:** ${hedef}\n🛡️ **Kapatan Yetkili:** ${interaction.user}\n\n⏱️ **Oturumda Kazanılan Süre:** \`${Math.floor(gecenSureSaniye / 3600)} Saat, ${Math.floor((gecenSureSaniye % 3600) / 60)} Dakika\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO)
-                .setColor('#d35400')
+                .setTitle('🚨 MESAİ AMİR TARAFINDAN ZORLA KAPATILDI')
+                .setDescription(`👤 **Görevi Kapatılan:** ${hedef}\n🛡️ **Kapatan Amir:** ${interaction.user}\n\n⏱️ **Devriyede Kazanılan Süre:** \`${Math.floor(gecenSureSaniye / 3600)} Saat, ${Math.floor((gecenSureSaniye % 3600) / 60)} Dakika\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
+                .setImage(EGM_LOGO)
+                .setColor('#c0392b')
                 .setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
@@ -298,7 +295,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (commandName === 'toplu-mesai-kapat') {
         if (!yetkiKontrol(interaction)) return interaction.reply({ content: `❌ Bu komutu kullanmak için Yetkiniz veya **${MESAİ_SORUMLUSU_ROL_ADI}** rolünüz bulunmalıdır.`, ephemeral: true });
-        if (aktifMesailer.size === 0) return interaction.reply({ content: '❌ Şu anda aktif mesaide kimse bulunmadığı için toplu kapatma yapılamaz.', ephemeral: true });
+        if (aktifMesailer.size === 0) return interaction.reply({ content: '❌ Aktif devriyede kimse bulunmadığı için toplu kapatma yapılamaz.', ephemeral: true });
 
         const kapatilanlar = [];
         const logKanali = interaction.guild.channels.cache.get(LOG_KANAL_ID);
@@ -317,14 +314,14 @@ client.on('interactionCreate', async (interaction) => {
         aktifMesailer.clear(); 
         await veriKaydet(interaction.guild);
 
-        await interaction.editReply({ content: `✅ Aktif mesaideki toplam **${kapatilanlar.length}** personelin mesaisi başarıyla toplu olarak sonlandırıldı.` });
+        await interaction.editReply({ content: `✅ Sahadaki toplam **${kapatilanlar.length}** personelin görevi başarıyla sonlandırıldı.` });
 
         if (logKanali) {
             const topluEmbed = new EmbedBuilder()
-                .setTitle('🚨 HERKESİN MESAİSİ TOPLU OLARAK KAPATILDI')
-                .setDescription(`🛡️ **İşlemi Yapan Yetkili:** ${interaction.user}\n\n👥 **Mesaisi Sonlandırılan Personeller:**\n${kapatilanlar.join('\n')}`)
-                .setImage(BAKANLIK_LOGO)
-                .setColor('#c0392b')
+                .setTitle('🚨 TÜM PERSONELLERİN MESAİSİ KAPATILDI')
+                .setDescription(`🛡️ **İşlemi Yapan Amir:** ${interaction.user}\n\n👥 **Görevi Sonlandırılan Personeller:**\n${kapatilanlar.join('\n')}`)
+                .setImage(EGM_LOGO)
+                .setColor('#95a5a6')
                 .setTimestamp();
             logKanali.send({ embeds: [topluEmbed] });
         }
@@ -363,8 +360,8 @@ client.on('interactionCreate', async (interaction) => {
             const tDakika = Math.floor((yeniToplam % 3600) / 60);
             const logEmbed = new EmbedBuilder()
                 .setTitle(logBaslik)
-                .setDescription(`👤 **İşlem Yapılan Personel:** ${hedef}\n🛡️ **İşlemi Yapan Yetkili:** ${interaction.user}\n\n${logAciklama}\n🗃️ **Yeni Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO).setColor(logRenk).setTimestamp();
+                .setDescription(`👤 **İşlem Yapılan Personel:** ${hedef}\n🛡️ **İşlemi Yapan Amir:** ${interaction.user}\n\n${logAciklama}\n🗃️ **Yeni Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
+                .setImage(EGM_LOGO).setColor(logRenk).setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
     }
@@ -376,7 +373,7 @@ client.on('interactionCreate', async (interaction) => {
     const userId = interaction.user.id;
 
     if (interaction.customId === 'mesai_baslat') {
-        if (aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Zaten aktif bir mesainiz bulunuyor!', ephemeral: true });
+        if (aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Zaten aktif bir göreviniz/devriyeniz bulunuyor!', ephemeral: true });
         const simdi = Date.now();
         aktifMesailer.set(userId, simdi);
 
@@ -390,22 +387,22 @@ client.on('interactionCreate', async (interaction) => {
         const trTarihMetni = formatTRTarih(new Date(simdi));
         sonGirisTarihleri.set(userId, trTarihMetni);
 
-        await interaction.reply({ content: '▶️ Mesainiz başarıyla başlatıldı. İyi çalışmalar!', ephemeral: true });
+        await interaction.reply({ content: '🔵 **EGM Göreviniz Başlatıldı.** İyi görevler dileriz!', ephemeral: true });
 
         if (logKanali) {
             const mevcutToplamSaniye = toplamSureler.get(userId) || 0;
             const mSaat = Math.floor(mevcutToplamSaniye / 3600);
             const mDakika = Math.floor((mevcutToplamSaniye % 3600) / 60);
             const logEmbed = new EmbedBuilder()
-                .setTitle('📥 MESAİ GİRİŞİ YAPILDI')
-                .setDescription(`👤 **Personel:** ${interaction.user}\n\n📅 **Giriş Saati:** \`${trTarihMetni}\`\n🗃️ **Mevcut Toplam Mesai:** \`${mSaat} Saat, ${mDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO).setColor('#2ecc71').setTimestamp();
+                .setTitle('📥 GÖREVE BAŞLANDI (EGM)')
+                .setDescription(`👤 **Personel:** ${interaction.user}\n\n📅 **Giriş Saati:** \`${trTarihMetni}\`\n🗃️ **Mevcut Toplam Görev Süresi:** \`${mSaat} Saat, ${mDakika} Dakika\``)
+                .setImage(EGM_LOGO).setColor('#2980b9').setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
     }
 
     if (interaction.customId === 'mesai_bitir') {
-        if (!aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Aktif bir mesainiz bulunmuyor!', ephemeral: true });
+        if (!aktifMesailer.has(userId)) return interaction.reply({ content: '❌ Aktif bir göreviniz bulunmuyor!', ephemeral: true });
         const girisZamani = aktifMesailer.get(userId);
         const gecenSureSaniye = Math.floor((Date.now() - girisZamani) / 1000);
         const eskiSure = toplamSureler.get(userId) || 0;
@@ -417,15 +414,15 @@ client.on('interactionCreate', async (interaction) => {
 
         const dakika = Math.floor(gecenSureSaniye / 60);
         const saniye = gecenSureSaniye % 60;
-        await interaction.reply({ content: `⏹️ Mesainiz bitirildi. Süreniz: **${dakika} dakika, ${saniye} saniye.**`, ephemeral: true });
+        await interaction.reply({ content: `🔴 **Göreviniz Bitti.** Bu devriyedeki süreniz: **${dakika} dakika, ${saniye} saniye.**`, ephemeral: true });
 
         if (logKanali) {
             const tSaat = Math.floor(yeniToplam / 3600);
             const tDakika = Math.floor((yeniToplam % 3600) / 60);
             const logEmbed = new EmbedBuilder()
-                .setTitle('📤 MESAİ ÇIKIŞI YAPILDI')
+                .setTitle('📤 GÖREV BİTTİ (EGM)')
                 .setDescription(`👤 **Personel:** ${interaction.user}\n\n⏱️ **Bu Oturumdaki Süre:** \`${dakika} Dakika, ${saniye} Saniye\`\n🗃️ **Güncel Toplam Süre:** \`${tSaat} Saat, ${tDakika} Dakika\``)
-                .setImage(BAKANLIK_LOGO).setColor('#e74c3c').setTimestamp();
+                .setImage(EGM_LOGO).setColor('#e74c3c').setTimestamp();
             logKanali.send({ embeds: [logEmbed] });
         }
     }

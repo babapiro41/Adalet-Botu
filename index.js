@@ -13,8 +13,8 @@ const client = new Client({
 
 // CONFIG AYARLARI (EGM TEMASI)
 const EGM_LOGO = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/EGM_Logo.png/800px-EGM_Logo.png';
-const LOG_KANAL_ID = 'YENİ_GİRECEĞİN_LOG_KANAL_IDSI'; 
-const MESAİ_SORUMLUSU_ROL_ADI = 'EGM Sorumlusu'; // Sunucundaki yetkili rol adı
+const LOG_KANAL_ID = '1531433468754530514'; 
+const MESAİ_SORUMLUSU_ROL_ADI = 'Mesai Sorumlusu'; // Sunucundaki yetkili rol adı
 
 // VERİ YAPILARI
 let toplamSureler = new Map();

@@ -156,7 +156,7 @@ client.once('ready', async () => {
             Routes.applicationCommands(client.user.id),
             { body: commands }
         );
-        console.log('✅ Tüm Slash (/) komutları (Aktivite dahil) yüklendi!');
+        console.log('✅ Tüm Slash (/) komutları yüklendi!');
     } catch (error) {
         console.error('Komut yükleme hatası:', error);
     }
@@ -190,7 +190,7 @@ client.on('interactionCreate', async interaction => {
         if (commandName === 'devriye-panel') {
             const embed = new EmbedBuilder()
                 .setTitle('🚨 EMNİYET GENEL MÜDÜRLÜĞÜ - DEVRİYE KONTROL PANELİ')
-                .setDescription('Aşağıdaki butonları kullanarak devriye süreçlerinizi yönetebilirsiniz.\n\n🚨 **Devriyeye Çık:** Ekip arkadaşlarınızı, aracınızı ve çağrı kodunuzu seçerek devriye başlatır.\n🏁 **Devriyeyi Bitir:** Tüm devriye ekibinin devriyesini sonlandırır.\n🚪 **Ekipten / Devriyeden Çık:** Sadece kendinizi devriyeden çıkartır ve sürenizi kaydeder.')
+                .setDescription('Aşağıdaki butonları kullanarak devriye süreçlerinizi yönetabilirsiniz.\n\n🚨 **Devriyeye Çık:** Ekip arkadaşlarınızı, aracınızı ve çağrı kodunuzu seçerek devriye başlatır.\n🏁 **Devriyeyi Bitir:** Tüm devriye ekibinin devriyesini sonlandırır.\n🚪 **Ekipten / Devriyeden Çık:** Sadece kendinizi devriyeden çıkartır ve sürenizi kaydeder.\n\n⚠️ *Not: Devriyeye çıkacak tüm personellerin aktif mesaide olması zorunludur!*')
                 .setColor(0x1F618D)
                 .setFooter({ text: 'EGM Dijital Devriye Takip Sistemi' });
 
@@ -346,6 +346,14 @@ client.on('interactionCreate', async interaction => {
 
         // --- DEVRİYEYE ÇIK ---
         if (interaction.customId === 'devriye_baslat_ekip_sec') {
+            // 🛑 MESAİ KONTROLÜ (A Kişisi Kendisi Mesaide mi?)
+            if (!aktifMesaieler.has(userId)) {
+                return interaction.reply({ 
+                    content: '❌ **Devriyeye çıkabilmek için önce aktif mesaide olmanız gerekmektedir!** Lütfen mesai panelinden mesaiye girin.', 
+                    ephemeral: true 
+                });
+            }
+
             if (findUserDevriye(userId)) {
                 return interaction.reply({ content: '❌ Zaten aktif bir devriyeniz veya parçası olduğunuz bir ekip bulunuyor!', ephemeral: true });
             }
@@ -403,6 +411,11 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId === 'mesai_bitir') {
             if (!aktifMesaieler.has(userId)) {
                 return interaction.reply({ content: '❌ Aktif bir mesainiz bulunmuyor!', ephemeral: true });
+            }
+
+            // MESAİ BİTİRİLİRKEN DEVRİYEDE İSE UYAR
+            if (findUserDevriye(userId)) {
+                return interaction.reply({ content: '⚠️ **Aktif devriyeniz devam ederken mesaiyi bitiremezsiniz!** Önce devriyenizi sonlandırın veya ekipten ayrılın.', ephemeral: true });
             }
 
             const baslangic = aktifMesaieler.get(userId);
@@ -595,6 +608,14 @@ client.on('interactionCreate', async interaction => {
 
         // --- FORM AÇMA BUTONU ---
         if (interaction.customId === 'devriye_form_ac') {
+            // Sorumlu mesai kontrolü tekrarı
+            if (!aktifMesaieler.has(userId)) {
+                return interaction.reply({ 
+                    content: '❌ Devriyeye çıkabilmek için aktif mesaide olmanız gerekmektedir!', 
+                    ephemeral: true 
+                });
+            }
+
             const modal = new ModalBuilder()
                 .setCustomId('devriye_form')
                 .setTitle('🚨 EGM Devriye Detayları');
@@ -628,6 +649,18 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isUserSelectMenu()) {
         if (interaction.customId === 'devriye_ekip_secimi') {
             const secilenler = interaction.values;
+
+            // 🛑 MESAİDE OLMAYAN EKİP ÜYELERİNİ TESPİT ET (B, C Kişileri)
+            const mesaideOlmayanlar = secilenler.filter(id => !aktifMesaieler.has(id));
+
+            if (mesaideOlmayanlar.length > 0) {
+                const etiketler = mesaideOlmayanlar.map(id => `<@${id}>`).join(', ');
+                return interaction.reply({
+                    content: `❌ **Devriye başlatılamadı!** Seçtiğiniz personellerden ${etiketler} şu an aktif **mesaide değil**.\nDevriyeye eklenecek tüm personellerin mesaide olması zorunludur!`,
+                    ephemeral: true
+                });
+            }
+
             const ekipMetni = secilenler.length > 0 
                 ? secilenler.map(id => `<@${id}>`).join(', ') 
                 : 'Solo (Tek Başına)';
@@ -646,7 +679,7 @@ client.on('interactionCreate', async interaction => {
             );
 
             await interaction.update({
-                content: `✅ Ekip Seçildi: **${ekipMetni}**\nŞimdi aşağıdaki butona basarak devriye bilgilerini tamamlayın:`,
+                content: `✅ Ekip Doğrulandı (Tüm Personel Mesaide): **${ekipMetni}**\nŞimdi aşağıdaki butona basarak devriye bilgilerini tamamlayın:`,
                 components: [devamButon]
             });
         }
@@ -657,6 +690,14 @@ client.on('interactionCreate', async interaction => {
     // ==========================================
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'devriye_form') {
+            // Son Güvenlik Kontrolü (Formu doldururken mesaiden çıkmış olma ihtimaline karşı)
+            if (!aktifMesaieler.has(interaction.user.id)) {
+                return interaction.reply({ 
+                    content: '❌ Devriye başlatılamadı! Aktif mesaide değilsiniz.', 
+                    ephemeral: true 
+                });
+            }
+
             const cagriKodu = interaction.fields.getTextInputValue('cagri_kodu');
             const arac = interaction.fields.getTextInputValue('arac_model');
             
@@ -664,6 +705,16 @@ client.on('interactionCreate', async interaction => {
             const ekipMetni = geciciEkip ? geciciEkip.metin : 'Solo (Tek Başına)';
             const ekipIds = geciciEkip ? geciciEkip.ids : [];
             
+            // Ekip üyelerinden formu doldurana kadar mesaiden çıkan var mı kontrol et
+            const sonMesaideOlmayanlar = ekipIds.filter(id => !aktifMesaieler.has(id));
+            if (sonMesaideOlmayanlar.length > 0) {
+                const etiketler = sonMesaideOlmayanlar.map(id => `<@${id}>`).join(', ');
+                return interaction.reply({
+                    content: `❌ **Devriye başlatılamadı!** Ekipteki ${etiketler} kişisi/kişileri artık aktif mesaide görünmüyor!`,
+                    ephemeral: true
+                });
+            }
+
             devriyeGeciciEkip.delete(interaction.user.id);
 
             const baslangic = Date.now();

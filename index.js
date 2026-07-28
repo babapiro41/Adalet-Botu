@@ -1,15 +1,13 @@
 // ===================================================
-// 1. EXPRESS WEB SUNUCUSU (Render & UptimeRobot 7/24)
+// 1. DAHİLİ WEB SUNUCUSU (Render & UptimeRobot 7/24)
 // ===================================================
-const express = require('express');
-const app = express();
+const http = require('http');
 const PORT = process.env.PORT || 10000;
 
-app.get('/', (req, res) => {
-    res.send('EGM Bot 7/24 Kesintisiz Aktif!');
-});
-
-app.listen(PORT, '0.0.0.0', () => {
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('EGM Bot 7/24 Kesintisiz Aktif!');
+}).listen(PORT, '0.0.0.0', () => {
     console.log(`Web sunucusu ${PORT} portunda başarıyla başlatıldı.`);
 });
 

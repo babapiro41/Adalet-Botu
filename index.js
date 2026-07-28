@@ -25,14 +25,16 @@ const {
     TextInputBuilder, 
     TextInputStyle, 
     UserSelectMenuBuilder, 
-    Partials 
+    Partials,
+    REST,
+    Routes,
+    SlashCommandBuilder
 } = require('discord.js');
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers
     ],
     partials: [Partials.Channel]
@@ -51,36 +53,62 @@ const aktifDevriyeler = new Map();
 const devriyeTaslaklari = new Map();
 
 // ===================================================
-// 3. BOT HAZIR OLDUĞUNDA (READY EVENT)
+// 3. SLASH (/) KOMUTLARININ TANIMLANMASI & KAYDI
 // ===================================================
-client.once('clientReady', () => {
+const commands = [
+    new SlashCommandBuilder()
+        .setName('mesai-panel')
+        .setDescription('EGM Mesai Kontrol Paneli kurulumunu yapar.'),
+    new SlashCommandBuilder()
+        .setName('devriye-panel')
+        .setDescription('EGM Devriye Kontrol Paneli kurulumunu yapar.')
+].map(command => command.toJSON());
+
+client.once('clientReady', async () => {
     console.log(`🚨 EGM Mesai ve Devriye Botu (${client.user.tag}) Aktif!`);
+
+    // Slash komutlarını Global olarak Discord'a kaydet
+    const rest = new REST({ version: '10' }).setToken(CONFIG.TOKEN);
+    try {
+        console.log('Slash (/) komutları Discord\'a yükleniyor...');
+        await rest.put(
+            Routes.applicationCommands(client.user.id),
+            { body: commands }
+        );
+        console.log('✅ Slash (/) komutları başarıyla kaydedildi!');
+    } catch (error) {
+        console.error('Slash komut kaydı hatası:', error);
+    }
 });
 
 // ===================================================
-// 4. MESAİ & DEVRİYE KONTROL PANELİ KURULUMU (!panel-kur)
+// 4. SLASH KOMUT YÖNETİMİ
 // ===================================================
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
 
-    if (message.content === '!panel-kur') {
-        if (!message.member.permissions.has('Administrator')) {
-            return message.reply('❌ Bu komutu sadece yöneticiler kullanabilir.');
-        }
+    const { commandName } = interaction;
 
+    // Yönetici Yetki Kontrolü
+    if (!interaction.member.permissions.has('Administrator')) {
+        return interaction.reply({ content: '❌ Bu komutu kullanmak için **Yönetici** yetkisine sahip olmalısınız.', ephemeral: true });
+    }
+
+    // --- A. /mesai-panel ---
+    if (commandName === 'mesai-panel') {
         const embed = new EmbedBuilder()
-            .setTitle('👮‍♂️ EMNİYET GENEL MÜDÜRLÜĞÜ - MESAİ VE DEVRİYE KONTROL PANELİ')
+            .setTitle('👮‍♂️ EMNİYET GENEL MÜDÜRLÜĞÜ - MESAİ KONTROL PANELİ')
             .setDescription(
-                'Aşağıdaki butonları kullanarak mesaiye girebilir/çıkabilir veya devriye süreçlerinizi yönetebilirsiniz.\n\n' +
-                '🟢 **Mesaiye Gir / Çık:** Bireysel mesai durumunuzu başlatır veya bitirir.\n' +
-                '🚨 **Devriyeye Çık / Bitir:** Çoklu personel ve araç seçimi ile devriye başlatır veya bitirir.'
+                'Aşağıdaki butonları kullanarak bireysel mesainizi başlatabilir veya bitirebilirsiniz.\n\n' +
+                '🟢 **Mesaiye Gir:** Görevinizi başlatır ve kanala log kaydı düşer.\n' +
+                '🔴 **Mesaiyi Bitir:** Görevinizi sonlandırır ve toplam sürenizi hesaplar.'
             )
             .setColor('#003366')
             .setThumbnail(CONFIG.EGM_LOGO)
             .setFooter({ text: 'EGM Dijital Personel Takip Sistemi', iconURL: CONFIG.EGM_LOGO })
             .setTimestamp();
 
-        const row1 = new ActionRowBuilder().addComponents(
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('btn_mesai_gir')
                 .setLabel('🟢 Mesaiye Gir')
@@ -91,7 +119,25 @@ client.on('messageCreate', async (message) => {
                 .setStyle(ButtonStyle.Danger)
         );
 
-        const row2 = new ActionRowBuilder().addComponents(
+        await interaction.channel.send({ embeds: [embed], components: [row] });
+        return interaction.reply({ content: '✅ Mesai Paneli bu kanala başarıyla kuruldu.', ephemeral: true });
+    }
+
+    // --- B. /devriye-panel ---
+    if (commandName === 'devriye-panel') {
+        const embed = new EmbedBuilder()
+            .setTitle('🚨 EMNİYET GENEL MÜDÜRLÜĞÜ - DEVRİYE KONTROL PANELİ')
+            .setDescription(
+                'Aşağıdaki butonları kullanarak devriye süreçlerinizi yönetebilirsiniz.\n\n' +
+                '🚨 **Devriyeye Çık:** Ekip arkadaşlarınızı, aracınızı ve çağrı kodunuzu seçerek devriye başlatır.\n' +
+                '🏁 **Devriyeyi Bitir:** Aktif devriyenizi sonlandırıp devriye süresini raporlar.'
+            )
+            .setColor('#1F618D')
+            .setThumbnail(CONFIG.EGM_LOGO)
+            .setFooter({ text: 'EGM Dijital Devriye Takip Sistemi', iconURL: CONFIG.EGM_LOGO })
+            .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('btn_devriye_baslat_select')
                 .setLabel('🚨 Devriyeye Çık')
@@ -102,8 +148,8 @@ client.on('messageCreate', async (message) => {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        await message.channel.send({ embeds: [embed], components: [row1, row2] });
-        await message.delete().catch(() => {});
+        await interaction.channel.send({ embeds: [embed], components: [row] });
+        return interaction.reply({ content: '✅ Devriye Paneli bu kanala başarıyla kuruldu.', ephemeral: true });
     }
 });
 
@@ -135,7 +181,7 @@ client.on('interactionCreate', async (interaction) => {
                 await mesaiLogKanal.send({ embeds: [embed] });
             }
 
-            return interaction.reply({ content: '✅ Mesainiz başarıyla başlatıldı ve log kaydı oluşturuldu.', ephemeral: true });
+            return interaction.reply({ content: '✅ Mesainiz başarıyla başlatıldı.', ephemeral: true });
         }
 
         // --- B. MESAİYİ BİTİR ---

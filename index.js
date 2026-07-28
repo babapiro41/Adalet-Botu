@@ -31,7 +31,6 @@ const CONFIG = {
     EGM_LOGO: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/EGM_Logo.png/800px-EGM_Logo.png', // EGM Logosu
     TOKEN: process.env.TOKEN
 };
-};
 
 // ==========================================
 // HAREKETLİ HAFIZA (VERİ DEPOLAMA)

@@ -29,7 +29,8 @@ const CONFIG = {
     MESAİ_LOG_KANAL_ID: '1531433468754530514',     // Mesai giriş/çıkış log kanalı
     DEVRIYE_LOG_KANAL_ID: '1531466878713593987', // Devriye başlangıç/bitiş log kanalı
     EGM_LOGO: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/EGM_Logo.png/800px-EGM_Logo.png', // EGM Logosu
-    TOKEN: 'TOKEN: process.env.TOKEN'
+    TOKEN: process.env.TOKEN
+};
 };
 
 // ==========================================

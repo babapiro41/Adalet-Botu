@@ -1,15 +1,21 @@
+// ===================================================
+// 1. EXPRESS WEB SUNUCUSU (Render & UptimeRobot 7/24)
+// ===================================================
 const express = require('express');
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-// Render Health Check (Render'ın uygulamayı 'Live' yapması için)
 app.get('/', (req, res) => {
-    res.send('EGM Bot Aktif ve Çalışıyor!');
+    res.send('EGM Bot 7/24 Kesintisiz Aktif!');
 });
 
-app.listen(port, () => {
-    console.log(`Web sunucusu ${port} portunda aktif!`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Web sunucusu ${PORT} portunda başarıyla başlatıldı.`);
 });
+
+// ===================================================
+// 2. DISCORD.JS KURULUMU & KONFİGÜRASYON
+// ===================================================
 const { 
     Client, 
     GatewayIntentBits, 
@@ -19,320 +25,290 @@ const {
     ButtonStyle, 
     ModalBuilder, 
     TextInputBuilder, 
-    TextInputStyle,
-    UserSelectMenuBuilder,
-    Partials
+    TextInputStyle, 
+    UserSelectMenuBuilder, 
+    Partials 
 } = require('discord.js');
 
-const client = new Client({ 
+const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers
     ],
-    partials: [Partials.Channel, Partials.Message]
+    partials: [Partials.Channel]
 });
 
-// ==========================================
-// CONFIGURASYON & KANAL ID'LERİ
-// ==========================================
 const CONFIG = {
-    MESAİ_LOG_KANAL_ID: '1531433468754530514',     // Mesai giriş/çıkış log kanalı
-    DEVRIYE_LOG_KANAL_ID: '1531466878713593987', // Devriye başlangıç/bitiş log kanalı
-    EGM_LOGO: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/EGM_Logo.png/800px-EGM_Logo.png', // EGM Logosu
-    TOKEN: process.env.TOKEN
+    MESAİ_LOG_KANAL_ID: '1531433468754530514',     // Mesai log kanalı
+    DEVRIYE_LOG_KANAL_ID: '1531466878713593987', // Devriye log kanalı
+    EGM_LOGO: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/EGM_Logo.png/800px-EGM_Logo.png',
+    TOKEN: process.env.TOKEN                       // Render Environment Variables'dan okunur
 };
 
-// ==========================================
-// HAREKETLİ HAFIZA (VERİ DEPOLAMA)
-// ==========================================
-const aktifMesailer = new Map();   // UserId -> { baslangic }
-const aktifDevriyeler = new Map(); // UserId -> { baslangic, memurlar: [], arac, kod }
-const devriyeGecmisi = [];        // { userId, sureDakika, tarih }
-const mesaiGecmisi = [];          // { userId, sureDakika, tarih }
+// Veri depolama (Geçici bellek)
+const aktifMesailer = new Map();
+const aktifDevriyeler = new Map();
+const devriyeTaslaklari = new Map();
 
-client.once('ready', () => {
+// ===================================================
+// 3. BOT HAZIR OLDUĞUNDA (READY EVENT)
+// ===================================================
+client.once('clientReady', () => {
     console.log(`🚨 EGM Mesai ve Devriye Botu (${client.user.tag}) Aktif!`);
 });
 
-// ==========================================
-// 1. ANA PANEL KURULUM KOMUTU (/panel-kur)
-// ==========================================
-client.on('messageCreate', async message => {
-    if (message.content === '!panel-kur' && message.member.permissions.has('Administrator')) {
-        
-        const panelEmbed = new EmbedBuilder()
-            .setColor('#002B66')
-            .setTitle('🚨 EGM MESAI VE DEVRİYE YÖNETİM PANELSİ')
+// ===================================================
+// 4. MESAİ & DEVRİYE KONTROL PANELİ KURULUMU (!panel-kur)
+// ===================================================
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    if (message.content === '!panel-kur') {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply('❌ Bu komutu sadece yöneticiler kullanabilir.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('👮‍♂️ EMNİYET GENEL MÜDÜRLÜĞÜ - MESAİ VE DEVRİYE KONTROL PANELİ')
             .setDescription(
-                'Aşağıdaki butonları kullanarak mesaiye girebilir, devriye görevi başlatabilir veya istatistiklerinizi görüntüleyebilirsiniz.\n\n' +
-                '📌 **Mesai:** Bireysel çalışma sürenizi kaydeder.\n' +
-                '🚔 **Devriye:** Ekibiniz, devriye aracınız ve devriye kodunuz ile görev başlatır.'
+                'Aşağıdaki butonları kullanarak mesaiye girebilir/çıkabilir veya devriye süreçlerinizi yönetebilirsiniz.\n\n' +
+                '🟢 **Mesaiye Gir / Çık:** Bireysel mesai durumunuzu başlatır veya bitirir.\n' +
+                '🚨 **Devriyeye Çık / Bitir:** Çoklu personel ve araç seçimi ile devriye başlatır veya bitirir.'
             )
+            .setColor('#003366')
             .setThumbnail(CONFIG.EGM_LOGO)
-            .setFooter({ text: 'Emniyet Genel Müdürlüğü - Personel Takip Sistemi' });
+            .setFooter({ text: 'EGM Dijital Personel Takip Sistemi', iconURL: CONFIG.EGM_LOGO })
+            .setTimestamp();
 
         const row1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('mesai_basla_btn')
-                .setLabel('🟢 Mesai Başlat')
+                .setCustomId('btn_mesai_gir')
+                .setLabel('🟢 Mesaiye Gir')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
-                .setCustomId('mesai_bitir_btn')
-                .setLabel('🔴 Mesai Bitir')
-                .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-                .setCustomId('devriye_basla_btn')
-                .setLabel('🚨 Devriyeye Çık')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('devriye_bitir_btn')
-                .setLabel('🏁 Devriye Bitir')
-                .setStyle(ButtonStyle.Secondary)
+                .setCustomId('btn_mesai_cik')
+                .setLabel('🔴 Mesaiyi Bitir')
+                .setStyle(ButtonStyle.Danger)
         );
 
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('istatistik_btn')
-                .setLabel('📊 İstatistiklerim')
+                .setCustomId('btn_devriye_baslat_select')
+                .setLabel('🚨 Devriyeye Çık')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('btn_devriye_bitir')
+                .setLabel('🏁 Devriyeyi Bitir')
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        await message.channel.send({ embeds: [panelEmbed], components: [row1, row2] });
-        message.delete().catch(() => {});
+        await message.channel.send({ embeds: [embed], components: [row1, row2] });
+        await message.delete().catch(() => {});
     }
 });
 
-// ==========================================
-// 2. ETKİLEŞİM VE BUTON MANTIĞI
-// ==========================================
-client.on('interactionCreate', async interaction => {
-
-    // --- A) MESAİ İŞLEMLERİ ---
-    if (interaction.isButton()) {
-        const userId = interaction.user.id;
-
-        // 1. MESAİ BAŞLAT
-        if (interaction.customId === 'mesai_basla_btn') {
-            if (aktifMesailer.has(userId)) {
-                return interaction.reply({ content: '⚠️ Zaten aktif bir mesainiz bulunuyor!', ephemeral: true });
+// ===================================================
+// 5. INTERACTION YÖNETİMİ (BUTON, MODAL, SELECT MENU)
+// ===================================================
+client.on('interactionCreate', async (interaction) => {
+    try {
+        // --- A. MESAİYE GİR ---
+        if (interaction.isButton() && interaction.customId === 'btn_mesai_gir') {
+            if (aktifMesailer.has(interaction.user.id)) {
+                return interaction.reply({ content: '❌ Zaten aktif bir mesainiz bulunuyor!', ephemeral: true });
             }
 
-            const baslangic = new Date();
-            aktifMesailer.set(userId, { baslangic });
+            aktifMesailer.set(interaction.user.id, { baslangic: Date.now() });
 
-            const logEmbed = new EmbedBuilder()
-                .setColor('#2ECC71')
-                .setTitle('🟢 MESAİ BAŞLADI')
-                .setThumbnail(CONFIG.EGM_LOGO)
-                .addFields(
-                    { name: '👮‍♂️ Memur', value: `<@${userId}>`, inline: true },
-                    { name: '🕒 Başlangıç Saati', value: `<t:${Math.floor(baslangic.getTime() / 1000)}:F>`, inline: false }
-                )
-                .setTimestamp();
+            const mesaiLogKanal = interaction.guild.channels.cache.get(CONFIG.MESAİ_LOG_KANAL_ID);
+            if (mesaiLogKanal) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🟢 MESAİ BAŞLADI')
+                    .addFields(
+                        { name: '👤 Personel', value: `${interaction.user} (${interaction.user.tag})`, inline: true },
+                        { name: '⏰ Başlangıç Saati', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true }
+                    )
+                    .setColor('#00FF00')
+                    .setThumbnail(interaction.user.displayAvatarURL())
+                    .setTimestamp();
 
-            const logKanal = interaction.guild.channels.cache.get(CONFIG.MESAİ_LOG_KANAL_ID);
-            if (logKanal) logKanal.send({ embeds: [logEmbed] });
-
-            return interaction.reply({ content: '✅ Mesainiz başarıyla başlatıldı.', ephemeral: true });
-        }
-
-        // 2. MESAİ BİTİR
-        if (interaction.customId === 'mesai_bitir_btn') {
-            if (!aktifMesailer.has(userId)) {
-                return interaction.reply({ content: '⚠️ Aktif bir mesai kaydınız bulunmuyor.', ephemeral: true });
+                await mesaiLogKanal.send({ embeds: [embed] });
             }
 
-            const mesai = aktifMesailer.get(userId);
-            const bitis = new Date();
-            const farkMs = bitis - mesai.baslangic;
-            const toplamDk = Math.floor(farkMs / (1000 * 60));
-            const saat = Math.floor(toplamDk / 60);
-            const dk = toplamDk % 60;
-            const sureMetni = `${saat} Saat ${dk} Dakika`;
-
-            mesaiGecmisi.push({ userId, sureDakika: toplamDk, tarih: bitis });
-            aktifMesailer.delete(userId);
-
-            const logEmbed = new EmbedBuilder()
-                .setColor('#E74C3C')
-                .setTitle('🔴 MESAİ BİTTİ')
-                .setThumbnail(CONFIG.EGM_LOGO)
-                .addFields(
-                    { name: '👮‍♂️ Memur', value: `<@${userId}>`, inline: true },
-                    { name: '⏳ Toplam Süre', value: `**${sureMetni}**`, inline: true },
-                    { name: '🕒 Bitiş Saati', value: `<t:${Math.floor(bitis.getTime() / 1000)}:F>`, inline: false }
-                )
-                .setTimestamp();
-
-            const logKanal = interaction.guild.channels.cache.get(CONFIG.MESAİ_LOG_KANAL_ID);
-            if (logKanal) logKanal.send({ embeds: [logEmbed] });
-
-            return interaction.reply({ content: `🏁 Mesainiz kapatıldı. Toplam Süre: **${sureMetni}**`, ephemeral: true });
+            return interaction.reply({ content: '✅ Mesainiz başarıyla başlatıldı ve log kaydı oluşturuldu.', ephemeral: true });
         }
 
-        // --- B) DEVRİYE İŞLEMLERİ ---
+        // --- B. MESAİYİ BİTİR ---
+        if (interaction.isButton() && interaction.customId === 'btn_mesai_cik') {
+            if (!aktifMesailer.has(interaction.user.id)) {
+                return interaction.reply({ content: '❌ Aktif bir mesainiz bulunmamaktadır!', ephemeral: true });
+            }
 
-        // 1. DEVRİYEYE ÇIK (MEMUR SEÇİMİ)
-        if (interaction.customId === 'devriye_basla_btn') {
-            if (aktifDevriyeler.has(userId)) {
-                return interaction.reply({ content: '⚠️ Zaten devam eden bir devriyeniz var!', ephemeral: true });
+            const mesaiVeri = aktifMesailer.get(interaction.user.id);
+            const sureGecenMs = Date.now() - mesaiVeri.baslangic;
+            const dakika = Math.floor(sureGecenMs / (1000 * 60));
+            const saat = Math.floor(dakika / 60);
+            const kalanDakika = dakika % 60;
+
+            aktifMesailer.delete(interaction.user.id);
+
+            const mesaiLogKanal = interaction.guild.channels.cache.get(CONFIG.MESAİ_LOG_KANAL_ID);
+            if (mesaiLogKanal) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🔴 MESAİ BİTTİ')
+                    .addFields(
+                        { name: '👤 Personel', value: `${interaction.user} (${interaction.user.tag})`, inline: true },
+                        { name: '⏱️ Toplam Mesai Süresi', value: `${saat} saat ${kalanDakika} dakika`, inline: true },
+                        { name: '⏰ Bitiş Saati', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+                    )
+                    .setColor('#FF0000')
+                    .setThumbnail(interaction.user.displayAvatarURL())
+                    .setTimestamp();
+
+                await mesaiLogKanal.send({ embeds: [embed] });
+            }
+
+            return interaction.reply({ content: `✅ Mesainiz sonlandırıldı. Toplam Süre: **${saat} saat ${kalanDakika} dakika**`, ephemeral: true });
+        }
+
+        // --- C. DEVRİYEYE ÇIK (PERSONEL SEÇİMİ) ---
+        if (interaction.isButton() && interaction.customId === 'btn_devriye_baslat_select') {
+            if (aktifDevriyeler.has(interaction.user.id)) {
+                return interaction.reply({ content: '❌ Zaten aktif bir devriyeniz bulunuyor!', ephemeral: true });
             }
 
             const userSelect = new UserSelectMenuBuilder()
-                .setCustomId('devriye_memur_secimi')
-                .setPlaceholder('Devriyeye çıkan tüm memurları seçin...')
+                .setCustomId('select_devriye_personel')
+                .setPlaceholder('Devriyeye katılacak personelleri seçin...')
                 .setMinValues(1)
                 .setMaxValues(5);
 
             const row = new ActionRowBuilder().addComponents(userSelect);
 
             return interaction.reply({
-                content: '👥 **Adım 1/2:** Lütfen kendiniz dahil devriyeye katılan tüm memurları listeden işaretleyin:',
+                content: '🚨 Devriyeye katılacak personelleri seçiniz (Kendinizi de dahil edin):',
                 components: [row],
                 ephemeral: true
             });
         }
 
-        // 2. DEVRİYE BİTİR
-        if (interaction.customId === 'devriye_bitir_btn') {
-            if (!aktifDevriyeler.has(userId)) {
-                return interaction.reply({ content: '⚠️ Aktif bir devriye kaydınız bulunmuyor.', ephemeral: true });
-            }
+        // --- D. DEVRİYE PERSONEL SEÇİLDİĞİNDE MODAL AÇ ---
+        if (interaction.isUserSelectMenu() && interaction.customId === 'select_devriye_personel') {
+            const secilenPersoneller = interaction.values;
+            devriyeTaslaklari.set(interaction.user.id, { personeller: secilenPersoneller });
 
-            const devriye = aktifDevriyeler.get(userId);
-            const bitis = new Date();
-            const farkMs = bitis - devriye.baslangic;
-            const toplamDk = Math.floor(farkMs / (1000 * 60));
-            const saat = Math.floor(toplamDk / 60);
-            const dk = toplamDk % 60;
-            const sureMetni = `${saat} Saat ${dk} Dk`;
+            const modal = new ModalBuilder()
+                .setCustomId('modal_devriye_bilgi')
+                .setTitle('🚨 Devriye Bilgi Formu');
 
-            // Devriyedeki TÜM memurların istatistiğine işle
-            devriye.memurlar.forEach(mId => {
-                devriyeGecmisi.push({ userId: mId, sureDakika: toplamDk, tarih: bitis });
+            const aracInput = new TextInputBuilder()
+                .setCustomId('input_arac')
+                .setLabel('Kullanılan Ekip Aracı')
+                .setPlaceholder('Örn: Megane 4 / Toros / Kobra')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            const kodInput = new TextInputBuilder()
+                .setCustomId('input_kod')
+                .setLabel('Devriye Kodu / Çağrı Kodu')
+                .setPlaceholder('Örn: A-102 / Devriye Alpha')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(aracInput),
+                new ActionRowBuilder().addComponents(kodInput)
+            );
+
+            return interaction.showModal(modal);
+        }
+
+        // --- E. DEVRİYE MODAL FORMU GÖNDERİLDİĞİNDE ---
+        if (interaction.isModalSubmit() && interaction.customId === 'modal_devriye_bilgi') {
+            const taslak = devriyeTaslaklari.get(interaction.user.id);
+            if (!taslak) return interaction.reply({ content: '❌ İşlem zaman aşımına uğradı.', ephemeral: true });
+
+            const arac = interaction.fields.getTextInputValue('input_arac');
+            const kod = interaction.fields.getTextInputValue('input_kod');
+
+            aktifDevriyeler.set(interaction.user.id, {
+                baslangic: Date.now(),
+                personeller: taslak.personeller,
+                arac: arac,
+                kod: kod
             });
 
-            const logEmbed = new EmbedBuilder()
-                .setColor('#3498DB')
-                .setTitle('🏁 EGM DEVRİYE TAMAMLANDI')
-                .setThumbnail(CONFIG.EGM_LOGO)
-                .addFields(
-                    { name: '👮‍♂️ Devriye Lideri', value: `<@${userId}>`, inline: true },
-                    { name: '👥 Devriye Ekibi', value: devriye.memurlar.map(id => `<@${id}>`).join(', '), inline: false },
-                    { name: '📻 Devriye Kodu', value: `\`${devriye.kod}\``, inline: true },
-                    { name: '🚘 Araç Marka/Model', value: `\`${devriye.arac}\``, inline: true },
-                    { name: '⏳ Toplam Devriye Süresi', value: `**${sureMetni}**`, inline: false }
-                )
-                .setFooter({ text: 'EGM Devriye Sistemleri' })
-                .setTimestamp();
+            devriyeTaslaklari.delete(interaction.user.id);
 
-            const logKanal = interaction.guild.channels.cache.get(CONFIG.DEVRIYE_LOG_KANAL_ID);
-            if (logKanal) logKanal.send({ embeds: [logEmbed] });
+            const devriyeLogKanal = interaction.guild.channels.cache.get(CONFIG.DEVRIYE_LOG_KANAL_ID);
+            if (devriyeLogKanal) {
+                const personelEtiketler = taslak.personeller.map(id => `<@${id}>`).join(', ');
 
-            aktifDevriyeler.delete(userId);
-            return interaction.reply({ content: `🏁 Devriye kapatıldı. Toplam Görev Süresi: **${sureMetni}**`, ephemeral: true });
+                const embed = new EmbedBuilder()
+                    .setTitle('🚨 DEVRİYE BAŞLADI')
+                    .addFields(
+                        { name: '🚓 Devriye Kodu', value: kod, inline: true },
+                        { name: '🚘 Ekip Aracı', value: arac, inline: true },
+                        { name: '👥 Katılan Personeller', value: personelEtiketler, inline: false },
+                        { name: '⏰ Başlangıç Saati', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+                    )
+                    .setColor('#3498DB')
+                    .setThumbnail(CONFIG.EGM_LOGO)
+                    .setTimestamp();
+
+                await devriyeLogKanal.send({ embeds: [embed] });
+            }
+
+            return interaction.reply({ content: `✅ **${kod}** kodlu devriye kaydı başlatıldı!`, ephemeral: true });
         }
 
-        // 3. İSTATİSTİK SORGULA
-        if (interaction.customId === 'istatistik_btn') {
-            const userDevriyeleri = devriyeGecmisi.filter(d => d.userId === userId);
-            const userMesaileri = mesaiGecmisi.filter(m => m.userId === userId);
+        // --- F. DEVRİYEYİ BİTİR ---
+        if (interaction.isButton() && interaction.customId === 'btn_devriye_bitir') {
+            if (!aktifDevriyeler.has(interaction.user.id)) {
+                return interaction.reply({ content: '❌ Adınıza kayıtlı aktif bir devriye bulunamadı!', ephemeral: true });
+            }
 
-            // Devriye Hesap
-            const devriyeSayisi = userDevriyeleri.length;
-            const devriyeToplamDk = userDevriyeleri.reduce((a, b) => a + b.sureDakika, 0);
-            const dSaat = Math.floor(devriyeToplamDk / 60);
-            const dDk = devriyeToplamDk % 60;
+            const devriyeVeri = aktifDevriyeler.get(interaction.user.id);
+            const sureGecenMs = Date.now() - devriyeVeri.baslangic;
+            const dakika = Math.floor(sureGecenMs / (1000 * 60));
+            const saat = Math.floor(dakika / 60);
+            const kalanDakika = dakika % 60;
 
-            // Mesai Hesap
-            const mesaiSayisi = userMesaileri.length;
-            const mesaiToplamDk = userMesaileri.reduce((a, b) => a + b.sureDakika, 0);
-            const mSaat = Math.floor(mesaiToplamDk / 60);
-            const mDk = mesaiToplamDk % 60;
+            aktifDevriyeler.delete(interaction.user.id);
 
-            const statEmbed = new EmbedBuilder()
-                .setColor('#F1C40F')
-                .setTitle(`📊 Personel Görev İstatistikleri`)
-                .setThumbnail(interaction.user.displayAvatarURL())
-                .addFields(
-                    { name: '👮‍♂️ Memur', value: `<@${userId}>`, inline: false },
-                    { name: '🚨 Devriye Sayısı', value: `\`${devriyeSayisi} Kez\``, inline: true },
-                    { name: '⏱️ Toplam Devriye Süresi', value: `\`${dSaat} Saat ${dDk} Dk\``, inline: true },
-                    { name: '🟢 Mesai Giriş Sayısı', value: `\`${mesaiSayisi} Kez\``, inline: true },
-                    { name: '⏱️ Toplam Mesai Süresi', value: `\`${mSaat} Saat ${mDk} Dk\``, inline: true }
-                )
-                .setTimestamp();
+            const devriyeLogKanal = interaction.guild.channels.cache.get(CONFIG.DEVRIYE_LOG_KANAL_ID);
+            if (devriyeLogKanal) {
+                const personelEtiketler = devriyeVeri.personeller.map(id => `<@${id}>`).join(', ');
 
-            return interaction.reply({ embeds: [statEmbed], ephemeral: true });
+                const embed = new EmbedBuilder()
+                    .setTitle('🏁 DEVRİYE BİTTİ')
+                    .addFields(
+                        { name: '🚓 Devriye Kodu', value: devriyeVeri.kod, inline: true },
+                        { name: '🚘 Ekip Aracı', value: devriyeVeri.arac, inline: true },
+                        { name: '⏱️ Toplam Devriye Süresi', value: `${saat} saat ${kalanDakika} dakika`, inline: false },
+                        { name: '👥 Görevli Personeller', value: personelEtiketler, inline: false }
+                    )
+                    .setColor('#E74C3C')
+                    .setThumbnail(CONFIG.EGM_LOGO)
+                    .setTimestamp();
+
+                await devriyeLogKanal.send({ embeds: [embed] });
+            }
+
+            return interaction.reply({ content: `✅ Devriye başarıyla sonlandırıldı. Toplam Devriye Süresi: **${saat} saat ${kalanDakika} dakika**`, ephemeral: true });
         }
-    }
 
-    // --- C) KULLANICI SEÇİM MENÜSÜ -> FORM AÇMA ---
-    if (interaction.isUserSelectMenu() && interaction.customId === 'devriye_memur_secimi') {
-        const secilenMemurlar = interaction.values;
-
-        const modal = new ModalBuilder()
-            .setCustomId(`devriye_modal_${secilenMemurlar.join('_')}`)
-            .setTitle('🚨 Adım 2/2: Devriye Detayları');
-
-        const aracInput = new TextInputBuilder()
-            .setCustomId('arac_model')
-            .setLabel('Devriye Aracı Marka / Model')
-            .setPlaceholder('Örn: Ford Transit / Megane 4')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
-
-        const kodInput = new TextInputBuilder()
-            .setCustomId('devriye_kodu')
-            .setLabel('Devriye Birimi ve Kodu')
-            .setPlaceholder('Örn: A Asayiş 3 / A3')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
-
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(aracInput),
-            new ActionRowBuilder().addComponents(kodInput)
-        );
-
-        await interaction.showModal(modal);
-    }
-
-    // --- D) DEVRİYE MODAL FORMU ONAYLANDIĞINDA ---
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('devriye_modal_')) {
-        const memurIds = interaction.customId.replace('devriye_modal_', '').split('_');
-        const arac = interaction.fields.getTextInputValue('arac_model');
-        const kod = interaction.fields.getTextInputValue('devriye_kodu');
-        const baslangic = new Date();
-
-        // Devriye Kaydı
-        aktifDevriyeler.set(interaction.user.id, {
-            baslangic,
-            memurlar: memurIds,
-            arac,
-            kod
-        });
-
-        const logEmbed = new EmbedBuilder()
-            .setColor('#3498DB')
-            .setTitle('🚨 EGM DEVRİYE BAŞLADI')
-            .setThumbnail(CONFIG.EGM_LOGO)
-            .addFields(
-                { name: '👮‍♂️ Devriye Lideri', value: `<@${interaction.user.id}>`, inline: true },
-                { name: '👥 Devriye Ekibi', value: memurIds.map(id => `<@${id}>`).join(', '), inline: false },
-                { name: '🚘 Araç Marka/Model', value: `\`${arac}\``, inline: true },
-                { name: '📻 Devriye Kodu', value: `\`${kod}\``, inline: true },
-                { name: '🕒 Başlangıç Saati', value: `<t:${Math.floor(baslangic.getTime() / 1000)}:F>`, inline: false }
-            )
-            .setFooter({ text: 'EGM Devriye Takip Sistemi' })
-            .setTimestamp();
-
-        const logKanal = interaction.guild.channels.cache.get(CONFIG.DEVRIYE_LOG_KANAL_ID);
-        if (logKanal) logKanal.send({ embeds: [logEmbed] });
-
-        return interaction.reply({ content: `✅ Devriye göreviniz başlatıldı! **KOD:** ${kod}`, ephemeral: true });
+    } catch (error) {
+        console.error('Interaction hatası:', error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '⚠️ Bir işlem hatası oluştu, lütfen tekrar deneyin.', ephemeral: true });
+        }
     }
 });
 
+// ===================================================
+// 6. DISCORD LOGIN
+// ===================================================
 client.login(CONFIG.TOKEN);

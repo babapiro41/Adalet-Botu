@@ -6,6 +6,7 @@ const {
     ButtonStyle, 
     EmbedBuilder, 
     SlashCommandBuilder, 
+    PermissionFlagsBits,
     REST, 
     Routes,
     ModalBuilder,
@@ -39,7 +40,7 @@ const MONGO_URI = process.env.MONGO_URI;
 
 if (MONGO_URI) {
     mongoose.connect(MONGO_URI)
-        .then(() => console.log('🍃 MongoDB Veritabanı Bağlantısı Başarılı! Veriler Artık Silinmeyecek.'))
+        .then(() => console.log('🍃 MongoDB Veritabanı Bağlantısı Başarılı!'))
         .catch(err => console.error('❌ MongoDB Bağlantı Hatası:', err));
 } else {
     console.warn('⚠️ MONGO_URI değişkeni bulunamadı! Veriler geçici hafızada tutulacak.');
@@ -73,7 +74,7 @@ const client = new Client({
 // Aktif Takip Geçici Hafızası
 const aktifMesaieler = new Map();
 const aktifDevriyeler = new Map();
-const devriyeGeciciEkip = new Map(); // Seçilen kullanıcıları Modal aşamasına aktarmak için
+const devriyeGeciciEkip = new Map();
 
 client.once('ready', async () => {
     console.log(`🚨 ${client.user.tag} (EGM Botu) olarak giriş yapıldı!`);
@@ -84,7 +85,29 @@ client.once('ready', async () => {
             .setDescription('EGM Mesai kontrol panelini gönderir.'),
         new SlashCommandBuilder()
             .setName('devriye-panel')
-            .setDescription('EGM Devriye kontrol panelini gönderir.')
+            .setDescription('EGM Devriye kontrol panelini gönderir.'),
+        new SlashCommandBuilder()
+            .setName('mesai-ekle')
+            .setDescription('Belirtilen personele manuel mesai süresi ekler.')
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+            .addUserOption(opt => opt.setName('kullanici').setDescription('Mesai eklenecek personel').setRequired(true))
+            .addIntegerOption(opt => opt.setName('saat').setDescription('Eklenecek saat').setRequired(true))
+            .addIntegerOption(opt => opt.setName('dakika').setDescription('Eklenecek dakika').setRequired(false)),
+        new SlashCommandBuilder()
+            .setName('mesai-sil')
+            .setDescription('Belirtilen personelin mesai süresinden düşer.')
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+            .addUserOption(opt => opt.setName('kullanici').setDescription('Mesaisi silinecek personel').setRequired(true))
+            .addIntegerOption(opt => opt.setName('saat').setDescription('Silinecek saat').setRequired(true))
+            .addIntegerOption(opt => opt.setName('dakika').setDescription('Silinecek dakika').setRequired(false)),
+        new SlashCommandBuilder()
+            .setName('mesai-sorgula')
+            .setDescription('Bir personelin toplam mesai süresini sorgular.')
+            .addUserOption(opt => opt.setName('kullanici').setDescription('Sorgulanacak personel').setRequired(true)),
+        new SlashCommandBuilder()
+            .setName('devriye-sorgula')
+            .setDescription('Bir personelin toplam devriye süresini sorgular.')
+            .addUserOption(opt => opt.setName('kullanici').setDescription('Sorgulanacak personel').setRequired(true))
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -94,13 +117,14 @@ client.once('ready', async () => {
             Routes.applicationCommands(client.user.id),
             { body: commands }
         );
-        console.log('✅ Slash (/) komutları başarıyla yüklendi!');
+        console.log('✅ Tüm Slash (/) komutları (Ekle/Sil/Sorgula dahil) yüklendi!');
     } catch (error) {
         console.error('Komut yükleme hatası:', error);
     }
 });
 
 function formatSure(ms) {
+    if (ms < 0) ms = 0;
     const saniye = Math.floor((ms / 1000) % 60);
     const dakika = Math.floor((ms / (1000 * 60)) % 60);
     const saat = Math.floor(ms / (1000 * 60 * 60));
@@ -109,10 +133,14 @@ function formatSure(ms) {
 
 client.on('interactionCreate', async interaction => {
 
+    // ==========================================
     // 1. SLASH KOMUTLARI
+    // ==========================================
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
+        const guildId = interaction.guild.id;
 
+        // --- PANELLER ---
         if (commandName === 'mesai-panel') {
             const embed = new EmbedBuilder()
                 .setTitle('👮‍♂️ EMNİYET GENEL MÜDÜRLÜĞÜ - MESAİ PANELİ')
@@ -144,29 +172,125 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ embeds: [embed], components: [row] });
         }
+
+        // --- MESAİ EKLE (YETKİLİ) ---
+        if (commandName === 'mesai-ekle') {
+            const hedefUser = interaction.options.getUser('kullanici');
+            const saat = interaction.options.getInteger('saat') || 0;
+            const dakika = interaction.options.getInteger('dakika') || 0;
+            const eklenecekMs = (saat * 60 * 60 * 1000) + (dakika * 60 * 1000);
+
+            if (!MONGO_URI) {
+                return interaction.reply({ content: '❌ Veritabanı bağlantısı olmadığı için süre eklenemiyor.', ephemeral: true });
+            }
+
+            let kayit = await MesaiModel.findOne({ userId: hedefUser.id, guildId });
+            if (!kayit) {
+                kayit = new MesaiModel({ userId: hedefUser.id, guildId, toplamSure: eklenecekMs });
+            } else {
+                kayit.toplamSure += eklenecekMs;
+            }
+            await kayit.save();
+
+            await interaction.reply({
+                content: `✅ <@${hedefUser.id}> isimli personele **${saat} saat, ${dakika} dakika** mesai eklendi.\n📊 Yeni Toplam Süre: **${formatSure(kayit.toplamSure)}**`,
+                ephemeral: true
+            });
+        }
+
+        // --- MESAİ SİL (YETKİLİ) ---
+        if (commandName === 'mesai-sil') {
+            const hedefUser = interaction.options.getUser('kullanici');
+            const saat = interaction.options.getInteger('saat') || 0;
+            const dakika = interaction.options.getInteger('dakika') || 0;
+            const silinecekMs = (saat * 60 * 60 * 1000) + (dakika * 60 * 1000);
+
+            if (!MONGO_URI) {
+                return interaction.reply({ content: '❌ Veritabanı bağlantısı olmadığı için süre silinemiyor.', ephemeral: true });
+            }
+
+            let kayit = await MesaiModel.findOne({ userId: hedefUser.id, guildId });
+            if (!kayit || kayit.toplamSure <= 0) {
+                return interaction.reply({ content: '❌ Bu personelin düşülecek kayıtlı mesai süresi yok!', ephemeral: true });
+            }
+
+            kayit.toplamSure = Math.max(0, kayit.toplamSure - silinecekMs);
+            await kayit.save();
+
+            await interaction.reply({
+                content: `🗑️ <@${hedefUser.id}> isimli personelin mesaisinden **${saat} saat, ${dakika} dakika** silindi.\n📊 Güncel Toplam Süre: **${formatSure(kayit.toplamSure)}**`,
+                ephemeral: true
+            });
+        }
+
+        // --- MESAİ SORGULA ---
+        if (commandName === 'mesai-sorgula') {
+            const hedefUser = interaction.options.getUser('kullanici');
+            let toplam = 0;
+
+            if (MONGO_URI) {
+                const kayit = await MesaiModel.findOne({ userId: hedefUser.id, guildId });
+                if (kayit) toplam = kayit.toplamSure;
+            }
+
+            let aktifMetin = '';
+            if (aktifMesaieler.has(hedefUser.id)) {
+                const suankiGecen = Date.now() - aktifMesaieler.get(hedefUser.id);
+                aktifMetin = `\n🟢 **Şu an aktif mesaide:** (${formatSure(suankiGecen)})`;
+            }
+
+            await interaction.reply({
+                content: `🔍 <@${hedefUser.id}> kişisinin Mesai Bilgileri:\n📊 **Toplam Kayıtlı Mesai:** ${formatSure(toplam)}${aktifMetin}`,
+                ephemeral: true
+            });
+        }
+
+        // --- DEVRİYE SORGULA ---
+        if (commandName === 'devriye-sorgula') {
+            const hedefUser = interaction.options.getUser('kullanici');
+            let toplam = 0;
+
+            if (MONGO_URI) {
+                const kayit = await DevriyeModel.findOne({ userId: hedefUser.id, guildId });
+                if (kayit) toplam = kayit.toplamSure;
+            }
+
+            let aktifMetin = '';
+            if (aktifDevriyeler.has(hedefUser.id)) {
+                const suankiGecen = Date.now() - aktifDevriyeler.get(hedefUser.id).baslangic;
+                aktifMetin = `\n🚨 **Şu an aktif devriyede:** (${formatSure(suankiGecen)})`;
+            }
+
+            await interaction.reply({
+                content: `🔍 <@${hedefUser.id}> kişisinin Devriye Bilgileri:\n📊 **Toplam Kayıtlı Devriye:** ${formatSure(toplam)}${aktifMetin}`,
+                ephemeral: true
+            });
+        }
     }
 
+    // ==========================================
     // 2. BUTON ETKİLEŞİMLERİ
+    // ==========================================
     if (interaction.isButton()) {
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
 
-        // --- DEVRİYEYE ÇIK (KİŞİ SEÇİMİ EKRANI AÇAR) ---
-        if (interaction.customId === 'devriye_baslat_ekip_sec' || interaction.customId === 'devriye_baslat') {
+        // --- DEVRİYEYE ÇIK (KİŞİ SEÇİMİ EKRANI) ---
+        if (interaction.customId === 'devriye_baslat_ekip_sec') {
             if (aktifDevriyeler.has(userId)) {
                 return interaction.reply({ content: '❌ Zaten aktif bir devriyeniz bulunuyor!', ephemeral: true });
             }
 
             const userSelect = new UserSelectMenuBuilder()
                 .setCustomId('devriye_ekip_secimi')
-                .setPlaceholder('Ekip arkadaşlarınızı seçin (Solo ise boş bırakıp geçin)')
+                .setPlaceholder('Ekip arkadaşlarınızı seçin (Solo ise boş bırakın)')
                 .setMinValues(0)
                 .setMaxValues(5);
 
             const row = new ActionRowBuilder().addComponents(userSelect);
 
             await interaction.reply({
-                content: '👥 **Lütfen devriyeye çıktığınız ekip arkadaşlarınızı aşağıdan seçin:**\n*(Tek başınızaysanız doğrudan seçim yapmadan aşağıdaki Modal butonunu bekleyebilirsiniz)*',
+                content: '👥 **Lütfen devriyeye çıktığınız ekip arkadaşlarınızı aşağıdan seçin:**',
                 components: [row],
                 ephemeral: true
             });
@@ -305,14 +429,14 @@ client.on('interactionCreate', async interaction => {
 
             let aktifMetin = '';
             if (aktifDevriyeler.has(userId)) {
-                const suankiGecen = Date.now() - aktifDevriyeler.get(userId);
+                const suankiGecen = Date.now() - aktifDevriyeler.get(userId).baslangic;
                 aktifMetin = `\n⏱️ **Şu anki aktif devriye süreniz:** ${formatSure(suankiGecen)}`;
             }
 
             return interaction.reply({ content: `📊 **Toplam Kayıtlı Devriye Süreniz:** ${formatSure(toplamSure)}${aktifMetin}`, ephemeral: true });
         }
 
-        // --- MODALI TETİKLEYEN BUTON (KİŞİ SEÇİLDİKTEN SONRA) ---
+        // --- FORM AÇMA BUTONU ---
         if (interaction.customId === 'devriye_form_ac') {
             const modal = new ModalBuilder()
                 .setCustomId('devriye_form')
@@ -341,7 +465,9 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 3. KİŞİ SEÇİMİ YAPILDIĞINDA (UserSelectMenu)
+    // ==========================================
+    // 3. KİŞİ SEÇİMİ (UserSelectMenu)
+    // ==========================================
     if (interaction.isUserSelectMenu()) {
         if (interaction.customId === 'devriye_ekip_secimi') {
             const secilenler = interaction.values;
@@ -349,7 +475,6 @@ client.on('interactionCreate', async interaction => {
                 ? secilenler.map(id => `<@${id}>`).join(', ') 
                 : 'Solo (Tek Başına)';
 
-            // Seçilen kişileri geçiciye kaydet
             devriyeGeciciEkip.set(interaction.user.id, ekipMetni);
 
             const devamButon = new ActionRowBuilder().addComponents(
@@ -367,14 +492,15 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 4. MODAL FORMU SUBMIT EDİLDİĞİNDE
+    // ==========================================
+    // 4. MODAL SUBMIT
+    // ==========================================
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'devriye_form') {
             const cagriKodu = interaction.fields.getTextInputValue('cagri_kodu');
             const arac = interaction.fields.getTextInputValue('arac_model');
             const ekip = devriyeGeciciEkip.get(interaction.user.id) || 'Solo (Tek Başına)';
             
-            // Kullanıldıktan sonra temizle
             devriyeGeciciEkip.delete(interaction.user.id);
 
             const baslangic = Date.now();

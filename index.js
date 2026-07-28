@@ -1,3 +1,15 @@
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Render Health Check (Render'ın uygulamayı 'Live' yapması için)
+app.get('/', (req, res) => {
+    res.send('EGM Bot Aktif ve Çalışıyor!');
+});
+
+app.listen(port, () => {
+    console.log(`Web sunucusu ${port} portunda aktif!`);
+});
 const { 
     Client, 
     GatewayIntentBits, 
